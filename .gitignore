@@ -1,2 +1,6 @@
 .vscode
 .env
+DATA/
+__pycache__
+processed_data
+.logfire

@@ -23,7 +23,7 @@ class Settings:
     GROQ_SLUG =  "rag"     # primary: @rag/llama-3.3-70b-versatile
     GROQ_SLUG_2 = "brag"  # fallback: @brag/llama-3.1-8b-instant
 
-    BATCH_SIZE = os.getenv("BATCH_SIZE")
+    BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50"))
     GEMINI_DIM = os.getenv("GEMINI_DIM")
     FALLBACK_DIM = os.getenv("FALLBACK_DIM")
     

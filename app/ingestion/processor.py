@@ -3,6 +3,7 @@ import sys
 import uuid
 import json
 import logfire
+import traceback
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -23,6 +24,7 @@ PROCESSED_DATA_DIR = "processed_data"
 qdrant_client = QdrantClient(
     url=settings.QDRANT_URL,
     api_key=settings.QDRANT_API_KEY,
+    timeout=120
 )
 
 
@@ -97,6 +99,7 @@ def process_file(file_path: str, filename: str, source_type: str):
 
         except Exception as e:
             logfire.error(f"Failed to process {filename}: {e}")
+            traceback.print_exc()
 
 
 def process_directory(dir_path: str, source_type: str):
@@ -108,7 +111,7 @@ def process_directory(dir_path: str, source_type: str):
             process_file(os.path.join(dir_path, filename), filename, source_type)
 
 
-def run_universal_ingestion(base_dir: str, explicit_source_type: str = None, wipe: bool = False):
+def run_universal_ingestion(base_dir: str, explicit_source_type: str | None = None, wipe: bool = False):
     """
     Scan base_dir, map sub-folders to source types, and ingest all documents.
     Pass --wipe to drop and recreate the Qdrant collection before ingestion.
