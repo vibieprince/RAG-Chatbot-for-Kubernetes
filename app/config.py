@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-
+from pydantic import SecretStr
 # Load environment variables
 load_dotenv()
 
@@ -14,14 +14,10 @@ class Settings:
     QDRANT_COLLECTION = "enterprise_rag"
 
     # --- REASONING ENGINE (GROQ) ---
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY")
+    GROQ_API_KEY: SecretStr | None = SecretStr(groq_key) if groq_key else None
     GROQ_MODEL = "llama-3.3-70b-versatile"
     GROQ_FALLBACK_API_KEY = os.getenv("GROQ_FALLBACK_API_KEY")
-
-    # --- LLM GATEWAY (PORTKEY) ---
-    PORTKEY_API_KEY = os.getenv("PORTKEY_API_KEY")
-    GROQ_SLUG =  "rag"     # primary: @rag/llama-3.3-70b-versatile
-    GROQ_SLUG_2 = "brag"  # fallback: @brag/llama-3.1-8b-instant
 
     BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50"))
     GEMINI_DIM = os.getenv("GEMINI_DIM")
@@ -32,6 +28,18 @@ class Settings:
     LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
     LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "rag_scale_test")
     LANGSMITH_ENDPOINT = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+
+    # --- LITELLM GATEWAY ---
+    LITELLM_BASE_URL = os.getenv(
+        "LITELLM_BASE_URL",
+        "http://127.0.0.1:4000/v1"
+    )
+
+    litellm_key = os.getenv("LITELLM_MASTER_KEY")
+
+    LITELLM_MASTER_KEY: SecretStr | None = (
+        SecretStr(litellm_key) if litellm_key else None
+    )
 
 # Apply LangChain environment variables for automatic tracing
 os.environ["LANGCHAIN_TRACING_V2"] = os.getenv("LANGSMITH_TRACING", "true")

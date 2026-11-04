@@ -1,0 +1,23 @@
+
+model_list:
+  - model_name: rag-primary
+    litellm_params:
+      model: groq/openai/gpt-oss-120b
+      api_key: os.environ/GROQ_API_KEY
+      temperature: 0
+
+  - model_name: rag-fallback
+    litellm_params:
+      model: groq/openai/gpt-oss-20b
+      api_key: os.environ/GROQ_FALLBACK_API_KEY
+      temperature: 0
+
+litellm_settings:
+  num_retries: 2
+  request_timeout: 90
+  fallbacks:
+    - rag-primary:
+        - rag-fallback
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
