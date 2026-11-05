@@ -1,12 +1,12 @@
-
 import logfire
+from langgraph.types import StreamWriter
 
 from app.agents.state import AgentState
 from app.gateway.client import get_langchain_llm, extract_cache_status
 
 
-# Initialize the responder through the centralized LiteLLM gateway.
-llm = get_langchain_llm(feature="responder")
+# Initialize the responder through the centralized LiteLLM gateway with streaming enabled.
+llm = get_langchain_llm(feature="responder", streaming=True)
 
 
 def _extract_text(content) -> str:
@@ -30,10 +30,11 @@ def _extract_text(content) -> str:
     return str(content)
 
 
-def generate_node(state: AgentState):
+def generate_node(state: AgentState, writer: StreamWriter = None):
     """
     Synthesizes a response using documentation context and conversation history.
     All LLM requests are routed through the LiteLLM Proxy.
+    Supports incremental token streaming via LangGraph StreamWriter when available.
     """
 
     query = state["current_query"]
@@ -88,14 +89,25 @@ def generate_node(state: AgentState):
 
     with logfire.span("✍️ LLM Synthesis"):
         try:
-            # LiteLLM Proxy handles model routing, retries and fallback.
-            response = llm.invoke(prompt)
+            accumulated_chunks = []
+            full_response = None
 
-            content = _extract_text(response.content)
+            # Stream chunks from LiteLLM Proxy
+            for chunk in llm.stream(prompt):
+                full_response = chunk if full_response is None else full_response + chunk
+                chunk_text = _extract_text(chunk.content)
+                if chunk_text:
+                    accumulated_chunks.append(chunk_text)
+                    if writer is not None:
+                        writer(chunk_text)
+
+            content = "".join(accumulated_chunks)
+            if not content and full_response is not None:
+                content = _extract_text(full_response.content)
 
             # Cache metadata is best-effort; LiteLLM may not expose it
             # in the LangChain response metadata.
-            cache_status = extract_cache_status(response)
+            cache_status = extract_cache_status(full_response)
             is_cache_hit = cache_status == "HIT"
 
             if is_cache_hit:

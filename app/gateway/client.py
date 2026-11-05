@@ -46,7 +46,7 @@ def _get_secret_value(value: Any) -> str:
     return value
 
 
-def get_langchain_llm(feature: str = "rag") -> ChatOpenAI:
+def get_langchain_llm(feature: str = "rag", streaming: bool = False) -> ChatOpenAI:
     """
     Returns a LangChain ChatOpenAI client connected
     to the local LiteLLM Proxy.
@@ -86,7 +86,8 @@ def get_langchain_llm(feature: str = "rag") -> ChatOpenAI:
         default_headers={
             "x-litellm-feature": feature,
             "x-litellm-user": "rag-system",
-        }
+        },
+        streaming=streaming,
     )
 
 

@@ -2,15 +2,18 @@
 # CRITICAL: logfire MUST be configured before ALL other imports
 # so that spans from all modules are captured from the start.
 # ============================================================
-import logfire
+import json
 import os
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
+import logfire
 logfire.configure(token=os.getenv("LOGFIRE_TOKEN"))
 
 # Now safe to import app modules - logfire is already active
 from fastapi import FastAPI, Response
+from fastapi.responses import StreamingResponse
 from app.agents.graph import rag_agent
 from app.guardrails.rails import initialize_rails, guard
 
@@ -34,7 +37,7 @@ async def lifespan(app: FastAPI):
         logfire.info("🛑 Application shutting down...")
 
 # Initialize FastAPI
-app = FastAPI(title="Enterprise Agentic RAG API",lifespan=lifespan)
+app = FastAPI(title="Enterprise Agentic RAG API", lifespan=lifespan)
 
 class QueryRequest(BaseModel):
     q: str
@@ -110,3 +113,137 @@ def query(request: QueryRequest):
             "status": "error",
             "sources": []
         }
+
+
+@app.post("/query/stream")
+def query_stream(request: QueryRequest):
+    """
+    Executes the LangGraph RAG flow with genuine token streaming via SSE.
+    Preserves memory, guardrails, retrieval, and full metadata compatibility.
+    """
+    q = request.q
+    thread_id = request.thread_id
+
+    def event_stream():
+        start_time = time.perf_counter()
+        first_token_time = None
+        accumulated_answer = []
+        metadata_emitted = False
+        latest_plan = ["Start"]
+        latest_status = "Initializing Graph..."
+        latest_sources = []
+
+        logfire.info("Streaming request started | thread={thread_id}", thread_id=thread_id)
+
+        try:
+            # Gate 1: NeMo Guardrails
+            rail_fired, rail_response = guard(q)
+            if rail_fired:
+                logfire.info("🛡️ Request blocked by guardrails | thread={thread_id}", thread_id=thread_id)
+                meta_payload = {
+                    "question": q,
+                    "thought_process": ["Intent: Guardrails Fired", "Retrieval: Skipped"],
+                    "status": "Blocked by guardrails.",
+                    "sources": [],
+                }
+                yield f"event: metadata\ndata: {json.dumps(meta_payload)}\n\n"
+                if rail_response:
+                    yield f"event: token\ndata: {json.dumps({'token': rail_response})}\n\n"
+                done_payload = {
+                    "answer": rail_response,
+                    "status": "Blocked by guardrails.",
+                }
+                yield f"event: done\ndata: {json.dumps(done_payload)}\n\n"
+                return
+
+            # Gate 2: LangGraph RAG Pipeline
+            initial_state = {
+                "messages": [{"role": "user", "content": q}],
+                "current_query": q,
+                "documents": [],
+                "plan": ["Start"],
+                "status": "Initializing Graph..."
+            }
+            config = {"configurable": {"thread_id": thread_id}}
+
+            final_answer_from_state = None
+
+            for mode, payload in rag_agent.stream(
+                initial_state,
+                config=config,
+                stream_mode=["custom", "updates"]
+            ):
+                if mode == "custom":
+                    token_text = payload if isinstance(payload, str) else str(payload)
+                    if token_text:
+                        if first_token_time is None:
+                            first_token_time = time.perf_counter()
+                            ttft = round(first_token_time - start_time, 3)
+                            logfire.info("First token emitted | ttft={ttft}s", ttft=ttft)
+                        accumulated_answer.append(token_text)
+                        yield f"event: token\ndata: {json.dumps({'token': token_text})}\n\n"
+
+                elif mode == "updates":
+                    # Track updates from nodes (planner, retriever, responder)
+                    for node_name, node_update in payload.items():
+                        if isinstance(node_update, dict):
+                            if "plan" in node_update and node_update["plan"]:
+                                latest_plan = node_update["plan"]
+                            if "status" in node_update and node_update["status"]:
+                                latest_status = node_update["status"]
+                            if "documents" in node_update and node_update["documents"]:
+                                latest_sources = node_update["documents"]
+                            if "final_answer" in node_update and node_update["final_answer"]:
+                                final_answer_from_state = node_update["final_answer"]
+
+                        if node_name in ("planner", "retriever"):
+                            logfire.info(
+                                "Stage completed: {node_name} | status: {status}",
+                                node_name=node_name,
+                                status=latest_status,
+                            )
+
+            # Emit metadata (thought process, sources, status)
+            meta_payload = {
+                "question": q,
+                "thought_process": latest_plan,
+                "status": latest_status,
+                "sources": latest_sources,
+            }
+            yield f"event: metadata\ndata: {json.dumps(meta_payload)}\n\n"
+
+            # Determine final answer
+            full_ans = "".join(accumulated_answer)
+            if not full_ans and final_answer_from_state:
+                full_ans = final_answer_from_state
+
+            total_duration = round(time.perf_counter() - start_time, 3)
+            logfire.info(
+                "Streaming completed | duration={duration}s | thread={thread_id}",
+                duration=total_duration,
+                thread_id=thread_id,
+            )
+
+            done_payload = {
+                "answer": full_ans,
+                "status": latest_status,
+                "duration": total_duration,
+            }
+            yield f"event: done\ndata: {json.dumps(done_payload)}\n\n"
+
+        except Exception as e:
+            logfire.error("Streaming failed or cancelled: {error}", error=str(e))
+            error_payload = {
+                "error": "I apologize, but I encountered an internal error while processing your request. Please try again later."
+            }
+            yield f"event: error\ndata: {json.dumps(error_payload)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
