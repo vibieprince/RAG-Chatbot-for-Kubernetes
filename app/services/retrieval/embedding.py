@@ -86,6 +86,9 @@ def _embed_batch(batch: list[str]) -> list[list[float]]:
 # ── Public API (same signatures as before) ─────────────────────────────────────
 
 def embed_query(query: str) -> list[float]:
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("Embedding query must be a non-empty string.")
+    query = query.strip()
     _init()
     if _model_type == "gemini":
         return _active_model.embed_query(query)

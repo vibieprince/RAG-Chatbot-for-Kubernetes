@@ -7,16 +7,32 @@ def retrieve_node(state: AgentState):
     """
     Performs vector search and semantic reranking for technical queries.
     """
-    query = state["current_query"]
-    
+    query = state.get("current_query")
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("Retrieval query must be a non-empty string.")
+    query = query.strip()
     
     # Standard Retrieval Logic
     with logfire.span("🔍 Knowledge Retrieval"):
         logfire.info(f"Searching Qdrant for: {query}")
         raw_results = search_enterprise_knowledge(query, limit=15) #top 15 docs from our vector DB
         logfire.info(f"Retrieved {len(raw_results)} candidates from Vector DB")
+
+        if not raw_results:
+            return {
+                "documents": [],
+                "status": "No relevant context found.",
+                "plan": state["plan"] + ["Context Retrieved"]
+            }
         
-        doc_contents = [doc['content'] for doc in raw_results]
+        doc_contents = [doc['content'] for doc in raw_results if isinstance(doc.get('content'), str) and doc['content'].strip()]
+
+        if not doc_contents:
+            return {
+                "documents": [],
+                "status": "No relevant context found.",
+                "plan": state["plan"] + ["Context Retrieved"]
+            }
         
         with logfire.span("⚖️ Semantic Reranking"):
             reranked_contents = rerank_documents(query, doc_contents, top_n=5)

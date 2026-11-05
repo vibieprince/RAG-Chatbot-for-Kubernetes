@@ -1,12 +1,11 @@
 import logfire
 
-from langchain_groq import ChatGroq
 from nemoguardrails import RailsConfig, LLMRails
 from nemoguardrails.integrations.langchain.llm_adapter import (
     LangChainLLMAdapter
 )
 
-from app.config import settings
+from app.gateway.client import get_langchain_llm
 from app.guardrails.colang_rules import (
     COLANG_CONTENT,
     YAML_CONTENT,
@@ -19,28 +18,23 @@ _rails: LLMRails | None = None
 def initialize_rails() -> None:
     """
     Build the NeMo LLMRails singleton at app startup.
-    Uses llama-3.1-8b-instant for fast intent classification at the gate —
-    the heavier llama-3.3-70b-versatile is reserved for the RAG pipeline.
+    Uses centralized LiteLLM gateway for intent classification at the gate.
     """
-    
-    guard_llm = ChatGroq(
-        api_key=settings.GROQ_API_KEY,
-        model="llama-3.1-8b-instant",
-        temperature=0
-    )
+    global _rails
+    guard_llm = get_langchain_llm(feature="guardrails")
 
     config = RailsConfig.from_content(
         colang_content=COLANG_CONTENT,
         yaml_content=YAML_CONTENT
     )
 
-    # Adapt LangChain ChatGroq to NeMo's LLMModel interface
+    # Adapt LangChain LLM to NeMo's LLMModel interface
     nemo_llm = LangChainLLMAdapter(guard_llm)
 
     _rails = LLMRails(config, llm=nemo_llm)
 
     logfire.info(
-        "🛡️ NeMo Guardrails initialised (llama-3.1-8b-instant)."
+        "🛡️ NeMo Guardrails initialised (via LiteLLM gateway)."
     )
     
 
@@ -55,8 +49,8 @@ def guard(message: str) -> tuple[bool, str | None]:
         (False, None)          — message is clean; proceed to LangGraph.
     """
     if _rails is None:
-        logfire.warning("⚠️ Guardrails not initialised — skipping gate.")
-        return False, None
+        logfire.error("❌ Guardrails not initialised — failing closed.")
+        raise RuntimeError("NeMo Guardrails is not initialized. Cannot evaluate security rails.")
 
     with logfire.span("🛡️ Guardrails Check"):
         result = _rails.generate(messages=[{"role": "user", "content": message}])

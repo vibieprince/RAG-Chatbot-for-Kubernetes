@@ -15,6 +15,7 @@ logfire.configure(token=os.getenv("LOGFIRE_TOKEN"))
 from fastapi import FastAPI, Response
 from fastapi.responses import StreamingResponse
 from app.agents.graph import rag_agent
+from app.agents.nodes.planner import PlannerDecisionError
 from app.guardrails.rails import initialize_rails, guard
 
 from contextlib import asynccontextmanager
@@ -232,11 +233,50 @@ def query_stream(request: QueryRequest):
             yield f"event: done\ndata: {json.dumps(done_payload)}\n\n"
 
         except Exception as e:
-            logfire.error("Streaming failed or cancelled: {error}", error=str(e))
-            error_payload = {
-                "error": "I apologize, but I encountered an internal error while processing your request. Please try again later."
+            logfire.error(
+                "Streaming failed: {error}",
+                error=str(e)
+            )
+
+            if isinstance(e, PlannerDecisionError):
+                fallback_message = (
+                    "I'm sorry, I couldn't determine how to process "
+                    "your request. Could you please rephrase it?"
+                )
+                fallback_status = "Planner could not classify the request."
+
+            else:
+                fallback_message = (
+                    "I'm sorry, something went wrong while processing "
+                    "your request. Please try again."
+                )
+                fallback_status = "Request processing failed."
+
+            # If no response was streamed, provide a complete fallback.
+            # If partial output exists, explain that generation was interrupted.
+            if accumulated_answer:
+                fallback_message = (
+                    "\n\nSorry, I couldn't complete the response. Please try again."
+                )
+
+            yield (
+                f"event: token\ndata: "
+                f"{json.dumps({'token': fallback_message})}\n\n"
+            )
+
+            meta_payload = {
+                "question": q,
+                "thought_process": latest_plan + ["Processing interrupted"],
+                "status": fallback_status,
+                "sources": latest_sources,
             }
-            yield f"event: error\ndata: {json.dumps(error_payload)}\n\n"
+
+            yield f"event: metadata\ndata: {json.dumps(meta_payload)}\n\n"
+
+            yield (
+                f"event: done\ndata: "
+                f"{json.dumps({'answer': ''.join(accumulated_answer) + fallback_message, 'status': fallback_status})}\n\n"
+            )
 
     return StreamingResponse(
         event_stream(),

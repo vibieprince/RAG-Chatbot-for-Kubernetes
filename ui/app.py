@@ -186,7 +186,7 @@ if prompt := st.chat_input("Ask about your documentation..."):
             error_message = None
 
             def token_generator():
-                # nonlocal metadata_dict, error_message
+                # nonlocal error_message
                 try:
                     for event_type, event_data in parse_sse_stream(response):
                         if event_type == "token":
@@ -203,6 +203,10 @@ if prompt := st.chat_input("Ask about your documentation..."):
                                 "error",
                                 "An internal error occurred during generation."
                             )
+
+                            if error_message:
+                                token_list.append(error_message)
+                                yield error_message
                 except Exception as e:
                     logfire.error("Error while reading SSE stream: {error}", error=str(e))
                     error_message = f"Stream interrupted: {e}"
@@ -213,6 +217,12 @@ if prompt := st.chat_input("Ask about your documentation..."):
             if error_message and not full_answer:
                 st.error(error_message)
                 st.stop()
+                with logfire.span("Streaming Response Rendering"):
+                    full_answer = st.write_stream(token_generator())
+
+                if not full_answer and error_message:
+                    st.markdown(error_message)
+                    full_answer = error_message
 
             # Display reasoning steps in an expander
             steps = metadata_dict.get("thought_process", [])

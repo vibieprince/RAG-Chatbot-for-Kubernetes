@@ -46,6 +46,23 @@ def generate_node(state: AgentState, writer: StreamWriter = None):
 
     user_msg = state["messages"][-1]["content"] if state["messages"] else ""
 
+    if query != "CONVERSATIONAL" and not state.get("documents"):
+        logfire.info("Technical query but no documents found — returning ungrounded fallback message.")
+        unsupported_msg = (
+            "I could not find any relevant documentation in the knowledge base to answer your question. "
+            "Because this answer cannot be grounded in the available documentation, I am unable to provide a technical response."
+        )
+        if writer is not None:
+            writer(unsupported_msg)
+        return {
+            "final_answer": unsupported_msg,
+            "status": "No relevant documentation available.",
+            "plan": state["plan"],
+            "messages": [
+                {"role": "assistant", "content": unsupported_msg}
+            ]
+        }
+
     if query == "CONVERSATIONAL":
         logfire.info("Generating conversational response using memory.")
 

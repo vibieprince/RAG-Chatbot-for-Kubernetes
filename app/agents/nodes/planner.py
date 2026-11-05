@@ -5,6 +5,9 @@ import logfire
 # Portkey-backed LLM: fallback + cache + retry — same .invoke() interface as ChatGroq
 llm = get_langchain_llm(feature="planner")
 
+class PlannerDecisionError(ValueError):
+    """Raised when the planner cannot produce a valid decision."""
+
 def planner_node(state: AgentState):
     """
     The Planner determines if a search is needed based on the ENTIRE conversation.
@@ -52,6 +55,13 @@ def planner_node(state: AgentState):
 
         else:
             decision = str(content).strip()
+
+        if not decision:
+            logfire.error("Planner returned an empty decision.")
+            raise PlannerDecisionError(
+                "The planner could not determine how to process this request."
+            )
+
         logfire.info(f"Intent identified: {decision}")
     
     if decision == "CONVERSATIONAL":
