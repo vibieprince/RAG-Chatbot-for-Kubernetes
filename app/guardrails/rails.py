@@ -1,16 +1,10 @@
 import logfire
-
+from langchain_groq import ChatGroq
 from nemoguardrails import RailsConfig, LLMRails
-from nemoguardrails.integrations.langchain.llm_adapter import (
-    LangChainLLMAdapter
-)
 
-from app.gateway.client import get_langchain_llm
-from app.guardrails.colang_rules import (
-    COLANG_CONTENT,
-    YAML_CONTENT,
-    RAIL_INDICATORS
-)
+from app.config import settings
+from app.guardrails.colang_rules import COLANG_CONTENT, YAML_CONTENT, RAIL_INDICATORS
+
 
 _rails: LLMRails | None = None
 
@@ -18,24 +12,25 @@ _rails: LLMRails | None = None
 def initialize_rails() -> None:
     """
     Build the NeMo LLMRails singleton at app startup.
-    Uses centralized LiteLLM gateway for intent classification at the gate.
+    Uses openai/gpt-oss-20b for fast intent classification at the gate —
+    the heavier llama-3.3-70b-versatile is reserved for the RAG pipeline.
     """
     global _rails
-    guard_llm = get_langchain_llm(feature="guardrails")
+
+    guard_llm = ChatGroq(
+        api_key=settings.GROQ_API_KEY,
+        model="openai/gpt-oss-20b",
+        temperature=0
+    )
 
     config = RailsConfig.from_content(
         colang_content=COLANG_CONTENT,
         yaml_content=YAML_CONTENT
     )
 
-    # Adapt LangChain LLM to NeMo's LLMModel interface
-    nemo_llm = LangChainLLMAdapter(guard_llm)
-
-    _rails = LLMRails(config, llm=nemo_llm)
-
-    logfire.info(
-        "🛡️ NeMo Guardrails initialised (via LiteLLM gateway)."
-    )
+    _rails = LLMRails(config, llm=guard_llm)  # type: ignore[arg-type]
+    logfire.info("🛡️ NeMo Guardrails initialised (openai/gpt-oss-20b).")
+    
     
 
 
@@ -49,8 +44,8 @@ def guard(message: str) -> tuple[bool, str | None]:
         (False, None)          — message is clean; proceed to LangGraph.
     """
     if _rails is None:
-        logfire.error("❌ Guardrails not initialised — failing closed.")
-        raise RuntimeError("NeMo Guardrails is not initialized. Cannot evaluate security rails.")
+        logfire.warning("⚠️ Guardrails not initialised — skipping gate.")
+        return False, None
 
     with logfire.span("🛡️ Guardrails Check"):
         result = _rails.generate(messages=[{"role": "user", "content": message}])

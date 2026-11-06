@@ -8,8 +8,7 @@ from app.services.retrieval.embedding import embed_query
 # Initialize Qdrant Client
 client = QdrantClient(
     url=settings.QDRANT_URL,
-    api_key=settings.QDRANT_API_KEY,
-    timeout=120
+    api_key=settings.QDRANT_API_KEY
 )
 
 def search_enterprise_knowledge(query: str, limit: int = 8):
@@ -30,13 +29,14 @@ def search_enterprise_knowledge(query: str, limit: int = 8):
 
         results = []
         for res in response.points:
+            payload = res.payload or {}
             results.append({
-                "content": res.payload.get("text", ""),
-                "source": res.payload.get("source", "Unknown"),
+                "content": payload.get("text", ""),
+                "source": payload.get("source", "Unknown"),
                 "score": res.score
             })
         
         return results
     except Exception as e:
         logfire.error(f"❌ Qdrant Search Failed: {e}")
-        raise
+        return []

@@ -1,13 +1,17 @@
 import time
+from typing import Optional, Union, TYPE_CHECKING
 import logfire
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from app.config import settings
 
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
+
 BATCH_SIZE = settings.BATCH_SIZE
 _GEMINI_DIM = settings.GEMINI_DIM
-_FALLBACK_DIM = settings.FALLBACK_DIM  # sentence transformers - all-mpnet-base-v2
+_FALLBACK_DIM = settings.FALLBACK_DIM  # all-mpnet-base-v2
 
-_active_model = None
+_active_model: Optional[Union[GoogleGenerativeAIEmbeddings, "SentenceTransformer"]] = None
 _model_type: str | None = None  # "gemini" or "fallback"
 
 
@@ -18,7 +22,7 @@ def _probe_gemini():
     try:
         model = GoogleGenerativeAIEmbeddings(
             model="models/gemini-embedding-2-preview",
-            google_api_key=settings.GEMINI_API_KEY,
+            api_key=settings.GEMINI_API_KEY,
         )
         model.embed_query("probe")
         logfire.info("Gemini embeddings ready (gemini-embedding-2-preview, 3072-dim).")
@@ -60,11 +64,14 @@ def get_embedding_dim() -> int:
 # ── Batch embedding with retry ─────────────────────────────────────────────────
 
 def _embed_batch(batch: list[str]) -> list[list[float]]:
+    _init()
+    assert _active_model is not None
+
     if _model_type == "gemini":
         # Exponential backoff: 1 s → 2 s → 4 s → 8 s (4 attempts total)
         for attempt in range(4):
             try:
-                return _active_model.embed_documents(batch)
+                return _active_model.embed_documents(batch)  # type: ignore
             except Exception as e:
                 err = str(e).lower()
                 is_rate_limit = any(x in err for x in ("429", "rate", "quota", "resource_exhausted"))
@@ -80,19 +87,17 @@ def _embed_batch(batch: list[str]) -> list[list[float]]:
                     raise
         raise RuntimeError("Gemini rate limit persisted after 4 attempts.")
     else:
-        return _active_model.encode(batch, show_progress_bar=False).tolist()
+        return _active_model.encode(batch, show_progress_bar=False).tolist()  # type: ignore
 
 
 # ── Public API (same signatures as before) ─────────────────────────────────────
 
 def embed_query(query: str) -> list[float]:
-    if not isinstance(query, str) or not query.strip():
-        raise ValueError("Embedding query must be a non-empty string.")
-    query = query.strip()
     _init()
+    assert _active_model is not None
     if _model_type == "gemini":
-        return _active_model.embed_query(query)
-    return _active_model.encode([query])[0].tolist()
+        return _active_model.embed_query(query)  # type: ignore
+    return _active_model.encode([query])[0].tolist()  # type: ignore
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:

@@ -6,7 +6,8 @@ load_dotenv()
 
 class Settings:
     # --- GEMINI EMBEDDINGS ---
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    google_api_key = os.getenv("GEMINI_API_KEY")
+    GEMINI_API_KEY: SecretStr | None = SecretStr(google_api_key) if google_api_key else None
 
     # --- VECTOR DB (QDRANT) ---
     QDRANT_URL = os.getenv("QDRANT_CLUSTER_ENDPOINT")
@@ -20,8 +21,8 @@ class Settings:
     GROQ_FALLBACK_API_KEY = os.getenv("GROQ_FALLBACK_API_KEY")
 
     BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50"))
-    GEMINI_DIM = os.getenv("GEMINI_DIM")
-    FALLBACK_DIM = os.getenv("FALLBACK_DIM")
+    GEMINI_DIM = int(os.getenv("GEMINI_DIM", "3072"))
+    FALLBACK_DIM = int(os.getenv("FALLBACK_DIM", "768"))
     
     # --- OBSERVABILITY ---
     LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING", "true")
@@ -35,11 +36,7 @@ class Settings:
         "http://127.0.0.1:4000/v1"
     )
 
-    litellm_key = os.getenv("LITELLM_MASTER_KEY")
-
-    LITELLM_MASTER_KEY: SecretStr | None = (
-        SecretStr(litellm_key) if litellm_key else None
-    )
+    LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY")
 
 # Apply LangChain environment variables for automatic tracing
 os.environ["LANGCHAIN_TRACING_V2"] = os.getenv("LANGSMITH_TRACING", "true")

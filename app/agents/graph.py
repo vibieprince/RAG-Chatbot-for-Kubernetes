@@ -11,7 +11,7 @@ workflow = StateGraph(AgentState)
 
 
 # 2. Define the Nodes
-workflow.add_node("planner", planner_node) # entry point
+workflow.add_node("planner", planner_node)
 workflow.add_node("retriever", retrieve_node)
 workflow.add_node("responder", generate_node)
 

@@ -1,141 +1,38 @@
-
-"""
-Centralized LLM Gateway Client.
-
-Architecture:
-    LangGraph / LangChain
-            |
-            v
-       LiteLLM Proxy
-            |
-       +----+----+
-       |         |
-    Primary   Fallback
-    Groq 70B  Groq 8B
-
-LiteLLM handles:
-    - Model routing
-    - Automatic fallback
-    - Retries
-    - Response caching
-
-No OpenAI API key or Portkey dependency required.
-"""
-
-from typing import Any
-
 from langchain_openai import ChatOpenAI
-
 from app.config import settings
 
-
-def _get_secret_value(value: Any) -> str:
+def get_langchain_llm(feature: str = "rag") -> ChatOpenAI:
     """
-    Extract a plain string from a Pydantic SecretStr
-    or accept an existing string.
+    Returns a LiteLLM-backed ChatOpenAI — a drop-in for ChatGroq in LangChain nodes.
+
+    LiteLLM provides an OpenAI-compatible proxy gateway. ChatOpenAI supports
+    base_url and default_headers/extra_body to pass routing or metadata parameters.
     """
-    if value is None:
-        raise ValueError("Required LiteLLM credential is missing.")
-
-    if hasattr(value, "get_secret_value"):
-        value = value.get_secret_value()
-
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError("LiteLLM credential is empty or invalid.")
-
-    return value
-
-
-def get_langchain_llm(feature: str = "rag", streaming: bool = False) -> ChatOpenAI:
-    """
-    Returns a LangChain ChatOpenAI client connected
-    to the local LiteLLM Proxy.
-
-    Args:
-        feature: Identifies the application component
-                 using this LLM (planner, responder, etc.).
-
-    Returns:
-        ChatOpenAI: OpenAI-compatible client routed through LiteLLM.
-    """
-
-    master_key = _get_secret_value(
-        settings.LITELLM_MASTER_KEY
-    )
-
-    base_url = settings.LITELLM_BASE_URL.rstrip("/")
-
     return ChatOpenAI(
-        model="rag-primary",
-
-        # LiteLLM OpenAI-compatible endpoint
-        base_url=base_url,
-
-        # LiteLLM master key, NOT an OpenAI API key
-        api_key=master_key,
-
+        api_key=settings.LITELLM_MASTER_KEY,
+        base_url=settings.LITELLM_BASE_URL,
+        model="groq/openai/gpt-oss-20b",  # Or your LiteLLM proxy route/model name
         temperature=0,
-
-        # Retry and fallback are centralized in LiteLLM
-        max_retries=0,
-
-        # Allow time for gateway retries and fallback
-        timeout=90,
-
-        # Feature-level request identification
-        default_headers={
-            "x-litellm-feature": feature,
-            "x-litellm-user": "rag-system",
-        },
-        streaming=streaming,
+        model_kwargs={
+            "extra_body": {
+                "metadata": {
+                    "feature": feature,
+                    "_user": "rag-system",
+                    "environment": "production"
+                }
+            }
+        }
     )
 
-
-def extract_cache_status(response: Any) -> str:
+def extract_cache_status(response) -> str:
     """
-    Extract cache information when exposed by the response.
-
-    Cache execution is managed by LiteLLM.
-    The exact cache-hit metadata depends on the LiteLLM
-    version and response integration.
-
-    Returns:
-        HIT, MISS, or UNKNOWN.
+    Pull cache status header from LiteLLM proxy response if supported.
+    Tries multiple attribute paths defensively — returns 'MISS' if not found.
     """
-
-    metadata = getattr(response, "response_metadata", {}) or {}
-
-    # Check common metadata representations.
-    status = (
-        metadata.get("cache_status")
-        or metadata.get("x-litellm-cache-hit")
-        or metadata.get("cache_hit")
-    )
-
-    if status is not None:
-        normalized = str(status).strip().lower()
-
-        if normalized in ("hit", "true", "1"):
-            return "HIT"
-
-        if normalized in ("miss", "false", "0"):
-            return "MISS"
-
-    # Some integrations expose HTTP headers.
-    headers = metadata.get("headers", {}) or {}
-
-    if isinstance(headers, dict):
-        for key, value in headers.items():
-            if key.lower() in (
-                "x-litellm-cache-hit",
-                "x-litellm-cache-status"
-            ):
-                normalized = str(value).strip().lower()
-
-                if normalized in ("hit", "true", "1"):
-                    return "HIT"
-
-                if normalized in ("miss", "false", "0"):
-                    return "MISS"
-
-    return "UNKNOWN"
+    for attr in ("_raw_response", "_response", "_http_response"):
+        raw = getattr(response, attr, None)
+        if raw is not None:
+            status = getattr(raw, "headers", {}).get("x-litellm-cache-status", "")
+            if status:
+                return status.upper()
+    return "MISS"

@@ -1,42 +1,22 @@
 import logfire
-from langgraph.types import StreamWriter
-
+from openai import OpenAI
 from app.agents.state import AgentState
-from app.gateway.client import get_langchain_llm, extract_cache_status
+from app.config import settings
+from app.gateway.client import extract_cache_status
+
+# Initialize OpenAI-compatible client pointing to the LiteLLM gateway
+litellm_client = OpenAI(
+    api_key=settings.LITELLM_MASTER_KEY,
+    base_url=settings.LITELLM_BASE_URL,
+)
 
 
-# Initialize the responder through the centralized LiteLLM gateway with streaming enabled.
-llm = get_langchain_llm(feature="responder", streaming=True)
-
-
-def _extract_text(content) -> str:
-    """Safely extract text from LangChain message content."""
-    if isinstance(content, str):
-        return content
-
-    if isinstance(content, list):
-        text_parts = []
-
-        for block in content:
-            if isinstance(block, str):
-                text_parts.append(block)
-            elif isinstance(block, dict):
-                text = block.get("text")
-                if isinstance(text, str):
-                    text_parts.append(text)
-
-        return "\n".join(text_parts)
-
-    return str(content)
-
-
-def generate_node(state: AgentState, writer: StreamWriter = None):
+def generate_node(state: AgentState):
     """
-    Synthesizes a response using documentation context and conversation history.
-    All LLM requests are routed through the LiteLLM Proxy.
-    Supports incremental token streaming via LangGraph StreamWriter when available.
+    Synthesizes a response using both Documentation Context AND Conversation History.
+    Uses the LiteLLM gateway client so we can read the cache status response 
+    header and surface Cache: Hit in the UI.
     """
-
     query = state["current_query"]
 
     history_str = ""
@@ -46,26 +26,8 @@ def generate_node(state: AgentState, writer: StreamWriter = None):
 
     user_msg = state["messages"][-1]["content"] if state["messages"] else ""
 
-    if query != "CONVERSATIONAL" and not state.get("documents"):
-        logfire.info("Technical query but no documents found — returning ungrounded fallback message.")
-        unsupported_msg = (
-            "I could not find any relevant documentation in the knowledge base to answer your question. "
-            "Because this answer cannot be grounded in the available documentation, I am unable to provide a technical response."
-        )
-        if writer is not None:
-            writer(unsupported_msg)
-        return {
-            "final_answer": unsupported_msg,
-            "status": "No relevant documentation available.",
-            "plan": state["plan"],
-            "messages": [
-                {"role": "assistant", "content": unsupported_msg}
-            ]
-        }
-
     if query == "CONVERSATIONAL":
         logfire.info("Generating conversational response using memory.")
-
         prompt = f"""
         You are a friendly and helpful Enterprise AI Assistant.
         Answer the user's latest message using the CONVERSATION HISTORY below.
@@ -76,10 +38,8 @@ def generate_node(state: AgentState, writer: StreamWriter = None):
         LATEST MESSAGE:
         "{user_msg}"
         """
-
     else:
         logfire.info("Generating technical RAG response.")
-
         max_context_chars = 25000
         full_context = ""
 
@@ -87,7 +47,7 @@ def generate_node(state: AgentState, writer: StreamWriter = None):
             if len(full_context) + len(doc) < max_context_chars:
                 full_context += doc + "\n\n"
             else:
-                logfire.warning("Context truncated to fit Groq TPM limits.")
+                logfire.warning("Context truncated to fit TPM limits.")
                 break
 
         prompt = f"""
@@ -106,37 +66,21 @@ def generate_node(state: AgentState, writer: StreamWriter = None):
 
     with logfire.span("✍️ LLM Synthesis"):
         try:
-            accumulated_chunks = []
-            full_response = None
-
-            # Stream chunks from LiteLLM Proxy
-            for chunk in llm.stream(prompt):
-                full_response = chunk if full_response is None else full_response + chunk
-                chunk_text = _extract_text(chunk.content)
-                if chunk_text:
-                    accumulated_chunks.append(chunk_text)
-                    if writer is not None:
-                        writer(chunk_text)
-
-            content = "".join(accumulated_chunks)
-            if not content and full_response is not None:
-                content = _extract_text(full_response.content)
-
-            # Cache metadata is best-effort; LiteLLM may not expose it
-            # in the LangChain response metadata.
-            cache_status = extract_cache_status(full_response)
+            response = litellm_client.chat.completions.create(
+                model="groq/openai/gpt-oss-20b",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1
+            )
+            content = response.choices[0].message.content
+            cache_status = extract_cache_status(response)
             is_cache_hit = cache_status == "HIT"
 
             if is_cache_hit:
-                logfire.info("⚡ LiteLLM Gateway Cache Hit.")
+                logfire.info("⚡ Gateway Cache Hit — response served from LiteLLM cache.")
                 plan_update = state["plan"] + ["Cache: Hit ⚡"]
                 status = "Cache hit — instant response."
-
             else:
-                logfire.info(
-                    f"Response synthesised via LiteLLM. "
-                    f"Cache status: {cache_status}"
-                )
+                logfire.info("✅ Response synthesised via LLM.")
                 plan_update = state["plan"]
                 status = "Response generated."
 
@@ -144,11 +88,9 @@ def generate_node(state: AgentState, writer: StreamWriter = None):
                 "final_answer": content,
                 "status": status,
                 "plan": plan_update,
-                "messages": [
-                    {"role": "assistant", "content": content}
-                ]
+                "messages": [{"role": "assistant", "content": content}]
             }
 
         except Exception as e:
             logfire.error(f"LLM Generation failed: {e}")
-            raise
+            raise e
