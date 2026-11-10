@@ -1,5 +1,6 @@
 
 import os
+import json
 import uuid
 
 import logfire
@@ -22,7 +23,10 @@ BACKEND_URL = os.getenv(
     "http://127.0.0.1:8000"
 ).rstrip("/")
 
-REQUEST_TIMEOUT = (5, 120)
+# Connection timeout / streaming read timeout (seconds).
+# The read timeout is None so the SSE stream can stay open as long as needed.
+CONNECT_TIMEOUT = int(os.getenv("BACKEND_CONNECT_TIMEOUT", "10"))
+STREAM_TIMEOUT = (CONNECT_TIMEOUT, None)
 
 AI_AVATAR = "🤖"
 USER_AVATAR = "👤"
@@ -63,26 +67,21 @@ st.set_page_config(
 
 def normalize_source(source):
     """Convert a retrieved source into readable text."""
-
     if isinstance(source, str):
         return source
-
     if isinstance(source, dict):
         return (
             source.get("content")
             or source.get("text")
             or str(source)
         )
-
     return str(source)
 
 
 def get_backend_error(response):
     """Extract a meaningful error from an HTTP response."""
-
     try:
         payload = response.json()
-
         if isinstance(payload, dict):
             return (
                 payload.get("detail")
@@ -90,75 +89,130 @@ def get_backend_error(response):
                 or payload.get("message")
                 or f"Backend returned HTTP {response.status_code}."
             )
-
     except ValueError:
         pass
-
     return f"Backend returned HTTP {response.status_code}."
 
 
-def query_backend(prompt, thread_id):
+def _parse_sse_line(line: str):
     """
-    Send a normal non-streaming request to FastAPI.
+    Parse a single SSE line.
 
-    Distinguishes connection failures, HTTP failures,
-    invalid responses and backend application errors.
+    Returns (event_type, data_dict) or (None, None) if the line
+    is not a complete data frame.
     """
+    line = line.strip()
+    if line.startswith("data:"):
+        return "data", line[5:].strip()
+    if line.startswith("event:"):
+        return "event", line[6:].strip()
+    return None, None
 
-    url = f"{BACKEND_URL}/query"
 
-    payload = {
-        "q": prompt,
-        "thread_id": thread_id,
-    }
+def stream_query(prompt: str, thread_id: str):
+    """
+    POST to /query/stream and consume the SSE response incrementally.
+
+    Yields structured event dicts: {"type": str, "data": dict}
+    Raises RuntimeError on connection/HTTP failure.
+    """
+    url = f"{BACKEND_URL}/query/stream"
+    payload = {"q": prompt, "thread_id": thread_id}
 
     try:
         response = requests.post(
             url,
             json=payload,
-            timeout=REQUEST_TIMEOUT,
+            stream=True,
+            timeout=STREAM_TIMEOUT,
+            headers={"Accept": "text/event-stream"},
         )
+    except requests.exceptions.Timeout:
+        raise RuntimeError(
+            "The backend took too long to connect. Please ensure FastAPI is running."
+        )
+    except requests.exceptions.ConnectionError:
+        raise RuntimeError(
+            "Cannot connect to the backend. Please ensure FastAPI is running."
+        )
+    except requests.exceptions.RequestException as exc:
+        raise RuntimeError(f"Unable to communicate with the backend: {exc}")
 
+    if not response.ok:
+        raise RuntimeError(get_backend_error(response))
+
+    # --- Consume SSE stream ---
+    current_event_type = "message"
+    pending_data: list[str] = []
+
+    for raw_line in response.iter_lines(decode_unicode=True):
+        if raw_line is None:
+            continue
+
+        # SSE frames are separated by blank lines
+        if raw_line == "":
+            # Dispatch accumulated event
+            if pending_data:
+                raw_data = " ".join(pending_data)
+                try:
+                    parsed = json.loads(raw_data)
+                except json.JSONDecodeError:
+                    parsed = {"raw": raw_data}
+                yield {"type": current_event_type, "data": parsed}
+            # Reset
+            current_event_type = "message"
+            pending_data = []
+            continue
+
+        key, value = _parse_sse_line(raw_line)
+        if key == "event":
+            current_event_type = value
+        elif key == "data":
+            pending_data.append(value)
+        # Ignore comment lines (starting with ':') and other fields
+
+
+def query_backend_sync(prompt: str, thread_id: str) -> dict:
+    """
+    Fallback: non-streaming request to /query.
+    Used only when streaming is unavailable.
+    """
+    url = f"{BACKEND_URL}/query"
+    payload = {"q": prompt, "thread_id": thread_id}
+
+    try:
+        response = requests.post(
+            url,
+            json=payload,
+            timeout=(CONNECT_TIMEOUT, 180),
+        )
     except requests.exceptions.Timeout:
         raise RuntimeError(
             "The backend took too long to respond. Please try again."
         )
-
     except requests.exceptions.ConnectionError:
         raise RuntimeError(
-            "Cannot connect to the backend. "
-            "Please ensure FastAPI is running."
+            "Cannot connect to the backend. Please ensure FastAPI is running."
         )
-
     except requests.exceptions.RequestException as exc:
-        raise RuntimeError(
-            f"Unable to communicate with the backend: {exc}"
-        )
+        raise RuntimeError(f"Unable to communicate with the backend: {exc}")
 
     if not response.ok:
         raise RuntimeError(get_backend_error(response))
 
     try:
         data = response.json()
-
     except ValueError:
-        raise RuntimeError(
-            "The backend returned an invalid JSON response."
-        )
+        raise RuntimeError("The backend returned an invalid JSON response.")
 
     if not isinstance(data, dict):
-        raise RuntimeError(
-            "The backend returned an unexpected response format."
-        )
+        raise RuntimeError("The backend returned an unexpected response format.")
 
-    # Handle application-level errors even when HTTP status is 200.
     if data.get("error"):
         raise RuntimeError(str(data["error"]))
 
     if data.get("status") == "error":
-        raise RuntimeError(
-            str(data.get("message", "The request could not be completed."))
-        )
+        raise RuntimeError(str(data.get("message", "The request could not be completed.")))
 
     return data
 
@@ -169,7 +223,6 @@ def query_backend(prompt, thread_id):
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
-
     logfire.info(
         "New user session created: {session_id}",
         session_id=st.session_state.session_id,
@@ -184,7 +237,6 @@ if "messages" not in st.session_state:
 # --------------------------------------------------
 
 with st.sidebar:
-
     st.title("🧠 Agent OS")
     st.divider()
 
@@ -193,21 +245,13 @@ with st.sidebar:
     else:
         st.info(f"Logfire: {LOGFIRE_STATUS}")
 
-    st.caption(
-        f"Memory ID: {st.session_state.session_id[:8]}"
-    )
-
+    st.caption(f"Memory ID: {st.session_state.session_id[:8]}")
     st.divider()
 
-    if st.button(
-        "🗑️ Clear History & Memory",
-        type="primary",
-    ):
+    if st.button("🗑️ Clear History & Memory", type="primary"):
         logfire.info("User cleared conversation history.")
-
         st.session_state.messages = []
         st.session_state.session_id = str(uuid.uuid4())
-
         st.rerun()
 
     st.caption(f"Backend: {BACKEND_URL}")
@@ -218,10 +262,8 @@ with st.sidebar:
 # --------------------------------------------------
 
 st.title("🤖 Enterprise Agentic Assistant")
-
 st.caption(
-    "Ask questions about Kubernetes, Intel hardware "
-    "and enterprise networking."
+    "Ask questions about Kubernetes, container orchestration, and cluster administration."
 )
 
 
@@ -230,22 +272,16 @@ st.caption(
 # --------------------------------------------------
 
 for message in st.session_state.messages:
-
-    avatar = (
-        AI_AVATAR
-        if message["role"] == "assistant"
-        else USER_AVATAR
-    )
-
+    avatar = AI_AVATAR if message["role"] == "assistant" else USER_AVATAR
     with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
 
 
 # --------------------------------------------------
-# CHAT INPUT AND BACKEND EXECUTION
+# CHAT INPUT AND STREAMING EXECUTION
 # --------------------------------------------------
 
-if prompt := st.chat_input("Ask about your documentation..."):
+if prompt := st.chat_input("Ask about Kubernetes..."):
 
     session_id = st.session_state.session_id
 
@@ -254,132 +290,127 @@ if prompt := st.chat_input("Ask about your documentation..."):
         session_id=session_id,
     )
 
-    # Display and save user message.
-    st.session_state.messages.append({
-        "role": "user",
-        "content": prompt,
-    })
-
+    # Display and save user message
+    st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user", avatar=USER_AVATAR):
         st.markdown(prompt)
 
-    # Assistant response.
+    # --- Assistant response ---
     with st.chat_message("assistant", avatar=AI_AVATAR):
 
-        answer = None
-        sources = []
-        thought_process = []
+        answer_parts: list[str] = []
+        sources: list = []
+        thought_process: list = []
+        had_error = False
 
-        with st.status(
-            "🔍 Agent is thinking...",
-            expanded=True,
-        ) as status:
+        # Progress display while security/planning/retrieval stages run
+        status_placeholder = st.empty()
+        # Token streaming target
+        answer_placeholder = st.empty()
+        # Sources displayed after generation
+        sources_placeholder = st.empty()
 
-            try:
-                with logfire.span("Calling RAG Backend"):
+        try:
+            with logfire.span("SSE Streaming RAG Backend"):
 
-                    data = query_backend(
-                        prompt=prompt,
-                        thread_id=session_id,
-                    )
+                collecting_tokens = False
 
-                # Extract response fields.
-                answer = data.get("answer")
+                for event in stream_query(prompt=prompt, thread_id=session_id):
+                    etype = event["type"]
+                    edata = event["data"]
 
-                if not isinstance(answer, str) or not answer.strip():
-                    raise RuntimeError(
-                        "The backend completed the request "
-                        "but returned an empty answer."
-                    )
+                    if etype == "status":
+                        stage = edata.get("stage", "")
+                        message_text = edata.get("message", "")
+                        stage_icons = {
+                            "security": "🛡️",
+                            "planning": "🧠",
+                            "retrieval": "🔍",
+                            "generation": "✍️",
+                            "blocked": "🚫",
+                        }
+                        icon = stage_icons.get(stage, "⚙️")
+                        status_placeholder.caption(f"{icon} {message_text}")
 
-                sources = data.get("sources") or []
-                thought_process = data.get("thought_process") or []
+                    elif etype == "security":
+                        decision = edata.get("decision", "UNKNOWN")
+                        latency = edata.get("latency_ms", 0)
+                        if decision == "ALLOW":
+                            status_placeholder.caption(
+                                f"✅ Security passed ({latency:.0f}ms)"
+                            )
+                        else:
+                            category = edata.get("category", "")
+                            status_placeholder.caption(
+                                f"🛡️ Security: {decision} — {category}"
+                            )
 
-                if not isinstance(sources, list):
-                    sources = []
+                    elif etype == "sources":
+                        raw_sources = edata.get("sources", [])
+                        if isinstance(raw_sources, list):
+                            sources = raw_sources
 
-                if not isinstance(thought_process, list):
-                    thought_process = []
+                    elif etype == "token":
+                        text_chunk = edata.get("text", "")
+                        if text_chunk:
+                            collecting_tokens = True
+                            answer_parts.append(text_chunk)
+                            # Render incremental markdown
+                            answer_placeholder.markdown("".join(answer_parts))
 
-                # Display execution steps.
-                if thought_process:
-                    st.markdown("**⚙️ Execution Details**")
+                    elif etype == "done":
+                        thought_process = edata.get("thought_process", [])
+                        if not sources:
+                            sources = edata.get("sources", [])
+                        status_placeholder.caption("✅ Response complete")
 
-                    for step in thought_process:
-                        st.write(f"• {step}")
+                    elif etype == "error":
+                        code = edata.get("code", "ERROR")
+                        msg = edata.get("message", "An error occurred.")
+                        status_placeholder.caption(f"⚠️ {code}")
+                        if not answer_parts:
+                            answer_placeholder.error(msg)
+                            answer_parts.append(f"**Error:** {msg}")
+                        had_error = True
 
-                status.update(
-                    label="✅ Answer received",
-                    state="complete",
-                    expanded=False,
-                )
+        except RuntimeError as exc:
+            had_error = True
+            error_msg = str(exc)
+            logfire.error("SSE stream failed: {error}", error=error_msg)
+            status_placeholder.caption("⚠️ Request failed")
+            answer_placeholder.error(error_msg)
+            answer_parts = [f"**Error:** {error_msg}"]
 
-            except RuntimeError as exc:
+        except Exception as exc:
+            had_error = True
+            logfire.error("Unexpected UI error: {error}", error=str(exc))
+            status_placeholder.caption("⚠️ Unexpected error")
+            answer_placeholder.error(
+                "An unexpected error occurred. Please try again."
+            )
+            answer_parts = ["An unexpected error occurred. Please try again."]
 
-                answer = str(exc)
+        # Clear the status caption once done (keep answer)
+        if not had_error:
+            status_placeholder.empty()
 
-                logfire.error(
-                    "RAG request failed: {error}",
-                    error=str(exc),
-                )
-
-                status.update(
-                    label="⚠️ Request could not be completed",
-                    state="error",
-                    expanded=False,
-                )
-
-            except Exception as exc:
-
-                answer = (
-                    "An unexpected error occurred while processing "
-                    "your request. Please try again."
-                )
-
-                logfire.error(
-                    "Unexpected UI error: {error}",
-                    error=str(exc),
-                )
-
-                status.update(
-                    label="⚠️ Unexpected error",
-                    state="error",
-                    expanded=False,
-                )
-
-        # --------------------------------------------------
-        # DISPLAY FINAL ANSWER
-        # --------------------------------------------------
-
-        st.markdown(answer)
-
-        # --------------------------------------------------
-        # DISPLAY RETRIEVED SOURCES
-        # --------------------------------------------------
-
+        # --- Display retrieved sources ---
         if sources:
-
-            with st.expander(
+            with sources_placeholder.expander(
                 f"📄 View Retrieved Context ({len(sources)} sources)"
             ):
-
                 for index, source in enumerate(sources, start=1):
-
                     source_text = normalize_source(source)
-
                     st.markdown(f"**Source {index}**")
                     st.text(source_text)
-
                     if index < len(sources):
                         st.divider()
 
-        # --------------------------------------------------
-        # SAVE ASSISTANT RESPONSE
-        # --------------------------------------------------
-
+        # --- Save to session history ---
+        final_answer = "".join(answer_parts)
         st.session_state.messages.append({
             "role": "assistant",
-            "content": answer,
+            "content": final_answer,
         })
 
         logfire.info(
