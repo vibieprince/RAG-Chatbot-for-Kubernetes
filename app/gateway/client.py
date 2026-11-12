@@ -11,7 +11,7 @@ def get_langchain_llm(feature: str = "rag") -> ChatOpenAI:
     return ChatOpenAI(
         api_key=settings.LITELLM_MASTER_KEY,
         base_url=settings.LITELLM_BASE_URL,
-        model="groq/openai/gpt-oss-20b",  # Or your LiteLLM proxy route/model name
+        model="rag-primary",  # Or your LiteLLM proxy route/model name
         temperature=0,
         model_kwargs={
             "extra_body": {
