@@ -3,6 +3,7 @@
 # so that spans from all modules are captured from the start.
 # ============================================================
 import os
+import asyncio
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -16,7 +17,9 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from app.config import settings
 from app.agents.graph import rag_agent
+from app.gateway.manager import gateway_manager
 from app.security.gateway import security_gateway
 from app.security.models import Decision
 from app.services.streaming import stream_rag_pipeline
@@ -35,16 +38,28 @@ class QueryRequest(BaseModel):
 
 @app.get("/api/health")
 def health_check():
+    """Returns general service health and LiteLLM gateway status."""
     return {
         "status": "healthy",
         "service": "Enterprise Kubernetes Agentic RAG",
         "version": "2.0.0",
+        "gateway": gateway_manager.get_status(),
         "features": {
             "ai_security_gateway": True,
             "realtime_streaming": True,
             "qdrant_retrieval": True,
-            "flashrank_reranking": True
+            "flashrank_reranking": True,
+            "parallel_gateway_wakeup": True
         }
+    }
+
+@app.get("/api/health/gateway")
+async def gateway_health_check():
+    """Explicitly probes the LiteLLM gateway health endpoint."""
+    is_ready = await gateway_manager.check_health()
+    return {
+        "ready": is_ready,
+        "details": gateway_manager.get_status()
     }
 
 @app.get("/api/graph")
@@ -62,6 +77,7 @@ async def query_stream_endpoint(request: QueryRequest):
     Genuine End-to-End Token Streaming Endpoint.
     Streams Server-Sent Events (SSE) representing security decisions,
     retrieval status, document sources, and live model tokens.
+    Initiates parallel LiteLLM wake-up concurrently with security checks.
     """
     return StreamingResponse(
         stream_rag_pipeline(request.q, request.thread_id or "default_user"),
@@ -74,15 +90,19 @@ async def query_stream_endpoint(request: QueryRequest):
     )
 
 @app.post("/query")
-def query_sync_endpoint(request: QueryRequest):
+async def query_sync_endpoint(request: QueryRequest):
     """
     Synchronous POST endpoint (preserved for backwards-compatibility).
     Applies the full defense-in-depth security gateway before LangGraph execution.
+    Initiates non-blocking LiteLLM wake-up concurrently with security checks.
     """
     q = request.q
     thread_id = request.thread_id or "default_user"
 
-    # Gate 1: Security Gateway
+    # Step 0: Non-blocking parallel wake-up probe
+    wakeup_task = gateway_manager.start_wakeup()
+
+    # Gate 1: Security Gateway (runs concurrently)
     sec_decision = security_gateway.evaluate_query(q)
     if sec_decision.decision != Decision.ALLOW:
         logfire.warning(f"🛡️ Blocked request at security gateway | Category: {sec_decision.category}")
@@ -99,6 +119,12 @@ def query_sync_endpoint(request: QueryRequest):
             "sources": []
         }
 
+    # Bounded wait for LiteLLM readiness before running LangGraph agent
+    try:
+        await gateway_manager.wait_ready(timeout=settings.LITELLM_WAKEUP_TIMEOUT)
+    except Exception:
+        pass
+
     # Gate 2: LangGraph Agent Execution
     initial_state = {
         "messages": [{"role": "user", "content": q}],
@@ -108,9 +134,13 @@ def query_sync_endpoint(request: QueryRequest):
         "status": "Initializing Graph..."
     }
     config = {"configurable": {"thread_id": thread_id}}
+    loop = asyncio.get_running_loop()
 
     try:
-        final_output = rag_agent.invoke(initial_state, config=config)
+        final_output = await loop.run_in_executor(
+            None,
+            lambda: rag_agent.invoke(initial_state, config=config)
+        )
         return {
             "question": q,
             "answer": final_output.get("final_answer"),
@@ -128,6 +158,11 @@ def query_sync_endpoint(request: QueryRequest):
             "status": "error",
             "sources": []
         }
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanly closes shared network resources on application shutdown."""
+    await gateway_manager.close()
 
 # Mount static files for the modern frontend (Chat app & Recruiter Landing Page)
 static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")

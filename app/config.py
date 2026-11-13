@@ -37,6 +37,12 @@ class Settings:
     )
 
     LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY")
+    LITELLM_HEALTH_URL = os.getenv("LITELLM_HEALTH_URL")
+    LITELLM_WAKEUP_TIMEOUT = float(os.getenv("LITELLM_WAKEUP_TIMEOUT", "25.0"))
+    LITELLM_INITIAL_BACKOFF = float(os.getenv("LITELLM_INITIAL_BACKOFF", "0.5"))
+    LITELLM_BACKOFF_FACTOR = float(os.getenv("LITELLM_BACKOFF_FACTOR", "1.5"))
+    LITELLM_MAX_RETRIES = int(os.getenv("LITELLM_MAX_RETRIES", "6"))
+    LITELLM_READINESS_CACHE_TTL = float(os.getenv("LITELLM_READINESS_CACHE_TTL", "30.0"))
 
 # Apply LangChain environment variables for automatic tracing
 os.environ["LANGCHAIN_TRACING_V2"] = os.getenv("LANGSMITH_TRACING", "true")

@@ -2,23 +2,27 @@
 End-to-End Streaming Pipeline — Production Async Architecture.
 
 Design Decisions:
-  1. Single Generation Call:
+  1. Parallel Cold-Start Wakeup:
+     Immediately upon request receipt, initiates an async background health/readiness
+     probe to LiteLLM. Cold-start waking overlaps with input normalization,
+     Guardrails-AI security evaluation, and initial SSE framing.
+  2. Single Generation Call:
      Planner and retriever run during planning/retrieval stages. The responder
-     is replaced here by a single streaming LLM call via AsyncOpenAI / AsyncGroq.
+     is executed as a single streaming LLM call via AsyncOpenAI / AsyncGroq.
      The full LangGraph graph's responder node is NOT called from this path,
-     completely eliminating the previous duplicate-generation bug.
-  2. Non-blocking Async I/O:
+     completely eliminating duplicate-generation issues.
+  3. Non-blocking Async I/O:
      Synchronous components (Qdrant search, FlashRank reranking, LangChain planner)
      are executed via asyncio.get_event_loop().run_in_executor() so they do not
      block the FastAPI event loop.
-  3. Incremental Token Yielding:
+  4. Incremental Token Yielding:
      Uses AsyncOpenAI (and AsyncGroq fallback) with `stream=True` and `async for`,
      allowing tokens to stream incrementally over HTTP Server-Sent Events (SSE)
      without event loop starvation.
-  4. Cancellation & Disconnect Handling:
+  5. Cancellation & Disconnect Handling:
      Captures asyncio.CancelledError when the client disconnects or aborts, ensuring
      clean socket closure without orphan background tasks.
-  5. Structured SSE Event Protocol:
+  6. Structured SSE Event Protocol:
      - status: current stage (security, planning, retrieval, generation)
      - security: security validation audit decision
      - sources: sanitized and reranked context documents
@@ -31,12 +35,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import AsyncGenerator, Dict, Any, List
+from typing import AsyncGenerator, Dict, Any, List, Optional
 
 import logfire
 from openai import AsyncOpenAI
 
 from app.config import settings
+from app.gateway.manager import gateway_manager
 from app.security.gateway import security_gateway
 from app.security.models import Decision
 
@@ -54,45 +59,50 @@ def format_sse(event_type: str, data: Dict[str, Any]) -> str:
 # Async Inference Streaming (LiteLLM Proxy with Groq Direct Fallback)
 # ---------------------------------------------------------------------------
 
-async def _get_async_inference_stream(prompt: str, history_messages: List[Dict[str, str]]):
+async def _get_async_inference_stream(
+    prompt: str,
+    history_messages: List[Dict[str, str]],
+    gateway_ready: bool = True,
+):
     """
     Initiates an asynchronous streaming chat completion request.
-    1. Tries the LiteLLM proxy gateway (http://127.0.0.1:4000/v1).
-    2. Falls back to direct Groq provider if LiteLLM is unreachable.
-    Both paths enforce stream=True.
+    1. If gateway_ready is True, tries LiteLLM proxy gateway (rag-primary).
+    2. If gateway is unready or LiteLLM fails, falls back directly to AsyncGroq.
+    Both paths enforce stream=True for zero-buffer real-time streaming.
     """
     messages = history_messages + [{"role": "user", "content": prompt}]
 
-    # 1. Primary: LiteLLM Gateway
-    try:
-        client = AsyncOpenAI(
-            api_key=settings.LITELLM_MASTER_KEY or "sk-proxy-key",
-            base_url=settings.LITELLM_BASE_URL,
-            timeout=5.0,
-        )
-        return await client.chat.completions.create(
-            model="groq/openai/gpt-oss-20b",
-            messages=messages,
-            temperature=0.1,
-            stream=True,
-        )
-    except Exception as proxy_err:
-        logfire.info(
-            "LiteLLM proxy offline ({err}), utilizing direct Groq async provider.",
-            err=str(proxy_err),
-        )
+    # 1. Primary Path: LiteLLM Gateway (only if gateway confirmed ready or not ruled out)
+    if gateway_ready:
+        try:
+            client = AsyncOpenAI(
+                api_key=settings.LITELLM_MASTER_KEY or "sk-proxy-key",
+                base_url=settings.LITELLM_BASE_URL,
+                timeout=5.0,
+            )
+            return await client.chat.completions.create(
+                model="rag-primary",
+                messages=messages,
+                temperature=0.1,
+                stream=True,
+            )
+        except Exception as proxy_err:
+            logfire.warning(
+                "LiteLLM proxy request failed ({err}). Engaging direct Groq fallback.",
+                err=str(proxy_err),
+            )
 
-    # 2. Fallback: Direct Groq
+    # 2. Resilient Fallback Path: Direct Groq Provider
     from groq import AsyncGroq
 
     groq_key = (
         settings.GROQ_API_KEY.get_secret_value()
-        if settings.GROQ_API_KEY
-        else ""
+        if hasattr(settings.GROQ_API_KEY, "get_secret_value") and settings.GROQ_API_KEY
+        else (str(settings.GROQ_API_KEY) if settings.GROQ_API_KEY else "")
     )
     groq_client = AsyncGroq(api_key=groq_key, timeout=90.0)
     return await groq_client.chat.completions.create(
-        model="openai/gpt-oss-20b",
+        model=settings.GROQ_MODEL,
         messages=messages,
         temperature=0.1,
         stream=True,
@@ -103,13 +113,18 @@ async def _get_async_inference_stream(prompt: str, history_messages: List[Dict[s
 # Synchronous Stage Helpers (Executed in ThreadPoolExecutor)
 # ---------------------------------------------------------------------------
 
-def _run_planner(query: str, messages: List[Dict[str, str]]) -> str:
+def _run_planner(
+    query: str,
+    messages: List[Dict[str, str]],
+    force_fallback: bool = False,
+) -> str:
     """
     Evaluates conversation history and user query to decide whether to search or converse.
+    Uses LiteLLM if ready, or direct Groq fallback if LiteLLM is not ready.
     """
     from app.gateway.client import get_langchain_llm
 
-    llm = get_langchain_llm(feature="planner")
+    llm = get_langchain_llm(feature="planner", force_fallback=force_fallback)
 
     history = ""
     for msg in messages[:-1]:
@@ -219,11 +234,16 @@ async def stream_rag_pipeline(
 ) -> AsyncGenerator[str, None]:
     """
     Streams Server-Sent Events representing:
-      1. Gate 1: Security Evaluation
-      2. Gate 2: Agent Planning & Knowledge Retrieval
+      0. Parallel Wake-Up: LiteLLM background wake-up triggered concurrently
+      1. Gate 1: Security Evaluation (Overlapped with wake-up)
+      2. Gate 2: Agent Planning (awaits gateway readiness or falls back to Groq) & Retrieval
       3. Gate 3: Live Incremental Token Streaming
     """
     loop = asyncio.get_running_loop()
+
+    # --- Step 0: Parallel LiteLLM Cold-Start Wake-Up ---
+    # Triggered immediately; runs concurrently with security evaluation
+    wakeup_task = gateway_manager.start_wakeup()
 
     # --- Gate 1: Security Pre-Check ---
     yield format_sse("status", {
@@ -280,8 +300,22 @@ async def stream_rag_pipeline(
     plan: List[str] = ["Start"]
     documents: List[str] = []
 
+    # Overlap boundary: ensure LiteLLM is ready before planner LLM execution
+    gateway_ready = False
     try:
-        intent = await loop.run_in_executor(None, _run_planner, query, messages)
+        gateway_ready = await gateway_manager.wait_ready(timeout=settings.LITELLM_WAKEUP_TIMEOUT)
+    except (asyncio.TimeoutError, Exception) as wait_err:
+        logfire.warning(f"Gateway wake-up wait boundary reached: {wait_err}. Engaging Groq fallback.")
+        gateway_ready = False
+
+    try:
+        intent = await loop.run_in_executor(
+            None,
+            _run_planner,
+            query,
+            messages,
+            not gateway_ready,
+        )
     except Exception as plan_err:
         logfire.error(f"Planner execution failed: {plan_err}")
         # Graceful fallback: treat intent as the technical query itself
@@ -327,7 +361,11 @@ async def stream_rag_pipeline(
     prompt = _build_responder_prompt(intent, documents, messages)
 
     try:
-        response_stream = await _get_async_inference_stream(prompt, [])
+        response_stream = await _get_async_inference_stream(
+            prompt,
+            [],
+            gateway_ready=gateway_ready,
+        )
 
         with logfire.span("✍️ LLM Synthesis (Streaming)"):
             full_text = ""

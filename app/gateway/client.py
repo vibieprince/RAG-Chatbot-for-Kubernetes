@@ -1,17 +1,31 @@
 from langchain_openai import ChatOpenAI
 from app.config import settings
+from app.gateway.manager import gateway_manager
 
-def get_langchain_llm(feature: str = "rag") -> ChatOpenAI:
+def get_langchain_llm(feature: str = "rag", force_fallback: bool = False):
     """
-    Returns a LiteLLM-backed ChatOpenAI — a drop-in for ChatGroq in LangChain nodes.
+    Returns an LLM client:
+    - Primary: LiteLLM-backed ChatOpenAI when gateway is awake and ready.
+    - Fallback: Direct ChatGroq when LiteLLM is unready, cold-starting, or unconfigured.
+    """
+    if force_fallback or not gateway_manager.is_cached_ready():
+        if settings.GROQ_API_KEY:
+            from langchain_groq import ChatGroq
+            groq_key = (
+                settings.GROQ_API_KEY.get_secret_value()
+                if hasattr(settings.GROQ_API_KEY, "get_secret_value")
+                else str(settings.GROQ_API_KEY)
+            )
+            return ChatGroq(
+                api_key=groq_key,
+                model=settings.GROQ_MODEL,
+                temperature=0,
+            )
 
-    LiteLLM provides an OpenAI-compatible proxy gateway. ChatOpenAI supports
-    base_url and default_headers/extra_body to pass routing or metadata parameters.
-    """
     return ChatOpenAI(
-        api_key=settings.LITELLM_MASTER_KEY,
+        api_key=settings.LITELLM_MASTER_KEY or "sk-proxy-key",
         base_url=settings.LITELLM_BASE_URL,
-        model="rag-primary",  # Or your LiteLLM proxy route/model name
+        model="rag-primary",
         temperature=0,
         model_kwargs={
             "extra_body": {

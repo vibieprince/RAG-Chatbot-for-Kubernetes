@@ -6,8 +6,9 @@ from app.gateway.client import extract_cache_status
 
 # Initialize OpenAI-compatible client pointing to the LiteLLM gateway
 litellm_client = OpenAI(
-    api_key=settings.LITELLM_MASTER_KEY,
+    api_key=settings.LITELLM_MASTER_KEY or "sk-proxy-key",
     base_url=settings.LITELLM_BASE_URL,
+    timeout=5.0,
 )
 
 
@@ -16,6 +17,7 @@ def generate_node(state: AgentState):
     Synthesizes a response using both Documentation Context AND Conversation History.
     Uses the LiteLLM gateway client so we can read the cache status response 
     header and surface Cache: Hit in the UI.
+    Falls back gracefully to direct Groq if LiteLLM proxy is unavailable.
     """
     query = state["current_query"]
 
@@ -67,7 +69,7 @@ def generate_node(state: AgentState):
     with logfire.span("✍️ LLM Synthesis"):
         try:
             response = litellm_client.chat.completions.create(
-                model="groq/openai/gpt-oss-20b",
+                model="rag-primary",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1
             )
@@ -92,5 +94,26 @@ def generate_node(state: AgentState):
             }
 
         except Exception as e:
-            logfire.error(f"LLM Generation failed: {e}")
+            logfire.warning(f"LiteLLM Generation failed ({e}), engaging direct Groq fallback.")
+            if settings.GROQ_API_KEY:
+                from groq import Groq
+                groq_key = (
+                    settings.GROQ_API_KEY.get_secret_value()
+                    if hasattr(settings.GROQ_API_KEY, "get_secret_value") and settings.GROQ_API_KEY
+                    else (str(settings.GROQ_API_KEY) if settings.GROQ_API_KEY else "")
+                )
+                groq_sync = Groq(api_key=groq_key, timeout=60.0)
+                fallback_resp = groq_sync.chat.completions.create(
+                    model=settings.GROQ_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                )
+                fallback_content = fallback_resp.choices[0].message.content
+                return {
+                    "final_answer": fallback_content,
+                    "status": "Response generated (direct Groq fallback).",
+                    "plan": state["plan"] + ["Gateway Fallback: Direct Groq"],
+                    "messages": [{"role": "assistant", "content": fallback_content}]
+                }
+            logfire.error(f"LLM Generation failed completely: {e}")
             raise e
