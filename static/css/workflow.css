@@ -1,0 +1,189 @@
+/* ==========================================================================
+   WORKFLOW & REQUEST LIFECYCLE STYLES
+   ========================================================================== */
+
+.workflow-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* Stepper Track */
+.stepper-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  border-bottom: 1px solid var(--border-primary);
+  padding-bottom: var(--space-4);
+  overflow-x: auto;
+}
+
+.step-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.step-btn:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.step-btn.active {
+  background-color: var(--bg-subtle);
+}
+
+.step-number {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.step-btn.active .step-number {
+  background-color: var(--text-primary);
+  color: #FFFFFF;
+}
+
+.step-btn.completed .step-number {
+  background-color: var(--accent-green);
+  color: #FFFFFF;
+}
+
+.step-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.step-title {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.step-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Stage Details Card */
+.workflow-details-card {
+  background-color: #FFFFFF;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  padding: var(--space-8);
+  box-shadow: var(--shadow-sm);
+}
+
+.workflow-details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.workflow-stage-heading {
+  font-size: var(--font-size-2xl);
+  font-weight: 800;
+}
+
+.workflow-columns {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: var(--space-8);
+}
+
+@media (max-width: 900px) {
+  .workflow-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.workflow-narrative h4 {
+  font-size: var(--font-size-base);
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
+.workflow-narrative ul {
+  padding-left: var(--space-5);
+  margin-bottom: var(--space-4);
+}
+
+.workflow-narrative li {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+/* Simulated Live SSE Console */
+.sse-console {
+  background-color: var(--bg-dark-primary);
+  border: 1px solid var(--bg-dark-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 280px;
+}
+
+.sse-console-header {
+  background-color: var(--bg-dark-surface);
+  border-bottom: 1px solid var(--bg-dark-border);
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-dark-muted);
+}
+
+.sse-stream-feed {
+  padding: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: #E2E8F0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sse-line {
+  margin-bottom: 4px;
+}
+
+.sse-line-event {
+  color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.sse-line-data {
+  color: #94A3B8;
+  word-break: break-all;
+}
+
+.sse-line-token {
+  color: #F8FAFC;
+}

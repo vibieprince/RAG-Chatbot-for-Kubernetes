@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enterprise Kubernetes Agentic RAG Platform — Engineering Showcase</title>
+
+  <!-- Primary Meta Tags -->
+  <meta name="title" content="Enterprise Kubernetes Agentic RAG Platform — Engineering Showcase">
+  <meta name="description" content="A specialized, production-oriented Agentic RAG platform for Kubernetes cluster architecture, administrative operations, and defensive security. Features 4-layer defense-in-depth safety guardrails, LangGraph cyclic state planning, Qdrant vector search, FlashRank local reranking, LiteLLM gateway with Groq failover, and true Server-Sent Events (SSE) token streaming.">
+  <meta name="author" content="Prince Singh">
+  <meta name="color-scheme" content="light only">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://chatkubernetes.streamlit.app">
+  <meta property="og:title" content="Enterprise Kubernetes Agentic RAG Platform">
+  <meta property="og:description" content="Specialized Agentic RAG system for Kubernetes operations with defense-in-depth safety, Qdrant dense retrieval, FlashRank ONNX reranking, and true SSE token streaming.">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
+
+  <!-- Compiled Stylesheet -->
+  <link rel="stylesheet" href="./assets/css/styles.css">
+
+  <!-- Tailwind CSS Play CDN (Lightweight Enhancement for utility classes) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            canvas: { primary: '#F5F7FA', secondary: '#FFFFFF', surface: '#F0F3F7' },
+            ink: { primary: '#202631', secondary: '#667085', muted: '#8993A4' },
+            brand: { DEFAULT: '#4F83CC', hover: '#3E6FB3', light: '#E8F0FC' },
+            line: { DEFAULT: '#E3E8EF', soft: '#EDF1F7' }
+          },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Display"', '"SF Pro Text"', '"Segoe UI"', 'Roboto', 'sans-serif'],
+            mono: ['ui-monospace', '"SF Mono"', 'Menlo', 'Consolas', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Pinned Stable Mermaid.js (Light Theme Engine) -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+</head>
+<body class="bg-canvas-primary text-ink-primary antialiased selection:bg-brand-light selection:text-brand">
+
+  <!-- ========================================================================
+       APPLE-STYLE FROSTED GLASS NAVIGATION
+       ======================================================================== -->
+  <header class="glass-nav">
+    <div class="container-narrow h-full flex items-center justify-between">
+      <!-- Wordmark -->
+      <a href="#hero" class="flex items-center gap-2.5 text-ink-primary font-medium tracking-tight">
+        <div class="w-7 h-7 rounded-lg bg-brand-light border border-brand/20 flex items-center justify-center text-brand">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div class="flex items-baseline gap-1.5 text-sm">
+          <span class="font-semibold text-ink-primary">Kubernetes RAG</span>
+          <span class="text-xs text-ink-muted hidden sm:inline font-mono">Platform</span>
+        </div>
+      </a>
+
+      <!-- Desktop Nav Anchors -->
+      <nav class="hidden md:flex items-center gap-6 text-xs font-medium text-ink-secondary">
+        <a href="#overview" class="nav-anchor hover:text-ink-primary transition-colors">Overview</a>
+        <a href="#architecture" class="nav-anchor hover:text-ink-primary transition-colors">Architecture</a>
+        <a href="#workflow" class="nav-anchor hover:text-ink-primary transition-colors">Lifecycle</a>
+        <a href="#engineering" class="nav-anchor hover:text-ink-primary transition-colors">Engineering</a>
+        <a href="#security" class="nav-anchor hover:text-ink-primary transition-colors">Security</a>
+        <a href="#evaluation" class="nav-anchor hover:text-ink-primary transition-colors">Evaluation</a>
+        <a href="#docs" class="nav-anchor hover:text-ink-primary transition-colors">Docs</a>
+      </nav>
+
+      <!-- Action Button -->
+      <div class="flex items-center gap-3">
+        <a href="https://chatkubernetes.streamlit.app" target="_blank" rel="noopener noreferrer"
+           class="btn-apple btn-apple-primary btn-apple-sm text-xs shadow-sm">
+          <span>Launch Live App</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
+          </svg>
+        </a>
+
+        <!-- Mobile Menu Toggle -->
+        <button id="mobile-menu-btn" class="md:hidden p-1.5 text-ink-secondary hover:text-ink-primary" aria-label="Toggle Navigation Menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Drawer Nav -->
+    <div id="mobile-nav-menu" class="mobile-nav-menu">
+      <a href="#overview" class="text-sm font-medium text-ink-secondary py-1">Overview</a>
+      <a href="#architecture" class="text-sm font-medium text-ink-secondary py-1">Architecture</a>
+      <a href="#workflow" class="text-sm font-medium text-ink-secondary py-1">Request Lifecycle</a>
+      <a href="#engineering" class="text-sm font-medium text-ink-secondary py-1">Engineering Deep Dive</a>
+      <a href="#security" class="text-sm font-medium text-ink-secondary py-1">Security & Guardrails</a>
+      <a href="#evaluation" class="text-sm font-medium text-ink-secondary py-1">Evaluation & Tests</a>
+      <a href="#docs" class="text-sm font-medium text-ink-secondary py-1">Documentation</a>
+      <a href="https://chatkubernetes.streamlit.app" target="_blank" rel="noopener noreferrer" class="btn-apple btn-apple-primary text-xs w-full mt-2">
+        Launch Live Streamlit App ↗
+      </a>
+    </div>
+  </header>
+
+  <main>
+    <!-- ========================================================================
+         HERO SECTION (APPLE-INSPIRED BALANCED PRESENTATION)
+         ======================================================================== -->
+    <section class="section-spacing pt-12 pb-16" id="hero">
+      <div class="container-narrow">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+          <!-- Left Column: Typography & CTAs -->
+          <div class="lg:col-span-7">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-light border border-brand/20 text-brand text-xs font-mono font-medium mb-4">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              <span>Enterprise Cloud-Native Intelligence</span>
+            </div>
+
+            <h1 class="text-ink-primary font-semibold tracking-tight text-3xl sm:text-4xl lg:text-5xl leading-tight mb-4 text-balance">
+              Specialized Agentic Intelligence for Kubernetes Architecture & Operations.
+            </h1>
+
+            <p class="text-ink-secondary text-base sm:text-lg leading-relaxed mb-8 reading-width">
+              A production-oriented Agentic Retrieval-Augmented Generation platform engineered for cluster architecture, container orchestration, administrative operations, and defensive security. Features 4-layer defense-in-depth safety, LangGraph cyclic state planning, two-stage vector retrieval, and true end-to-end Server-Sent Events (SSE) token streaming.
+            </p>
+
+            <div class="flex flex-wrap items-center gap-3 mb-10">
+              <a href="#overview" class="btn-apple btn-apple-primary text-sm shadow-sm">
+                <span>Explore Project</span>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 13l5 5 5-5M7 6l5 5 5-5"/></svg>
+              </a>
+
+              <a href="https://chatkubernetes.streamlit.app" target="_blank" rel="noopener noreferrer"
+                 class="btn-apple btn-apple-secondary text-sm">
+                <span>Launch Live Application</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+              </a>
+
+              <a href="https://github.com/vibieprince/RAG-Chatbot-for-Kubernetes" target="_blank" rel="noopener noreferrer"
+                 class="btn-apple btn-apple-secondary text-sm">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                <span>GitHub</span>
+              </a>
+            </div>
+
+            <!-- Quiet Metrics Row -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-6 border-t border-line">
+              <div>
+                <div class="font-semibold text-ink-primary text-xl font-mono">24 / 24</div>
+                <div class="text-xs text-ink-muted">Pytest Validated</div>
+              </div>
+              <div>
+                <div class="font-semibold text-ink-primary text-xl font-mono">&lt; 2 ms</div>
+                <div class="text-xs text-ink-muted">Heuristic Latency</div>
+              </div>
+              <div>
+                <div class="font-semibold text-ink-primary text-xl font-mono">15 → 5</div>
+                <div class="text-xs text-ink-muted">Two-Stage Recall</div>
+              </div>
+              <div>
+                <div class="font-semibold text-ink-primary text-xl font-mono">Single</div>
+                <div class="text-xs text-ink-muted">SSE Token Stream</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Refined Technical Pipeline Preview Card -->
+          <div class="lg:col-span-5">
+            <div class="glass-surface p-6 shadow-card border border-line">
+              <div class="flex items-center justify-between pb-3 mb-4 border-b border-line-soft">
+                <span class="text-xs font-mono font-medium text-ink-muted uppercase tracking-wider">Verified Architecture Spec</span>
+                <span class="badge-quiet badge-green">Production Audited</span>
+              </div>
+
+              <!-- Pipeline Schematic Flow -->
+              <div class="space-y-3 font-mono text-xs">
+                <div class="p-3 bg-white rounded-lg border border-line flex items-center justify-between">
+                  <span class="text-ink-primary font-semibold">1. Client / Streamlit UI</span>
+                  <span class="text-ink-muted">SSE Event Reader</span>
+                </div>
+                <div class="flex justify-center text-ink-muted select-none">↓</div>
+                <div class="p-3 bg-brand-light/50 rounded-lg border border-brand/20 flex items-center justify-between text-brand">
+                  <span class="font-semibold">2. Defense-in-Depth Security</span>
+                  <span>4 Verification Layers</span>
+                </div>
+                <div class="flex justify-center text-ink-muted select-none">↓</div>
+                <div class="p-3 bg-white rounded-lg border border-line flex items-center justify-between">
+                  <span class="text-ink-primary font-semibold">3. LangGraph Cyclic StateGraph</span>
+                  <span class="text-ink-muted">Planner / Router Node</span>
+                </div>
+                <div class="flex justify-center text-ink-muted select-none">↓</div>
+                <div class="p-3 bg-white rounded-lg border border-line flex items-center justify-between">
+                  <span class="text-ink-primary font-semibold">4. Qdrant & FlashRank Reranker</span>
+                  <span class="text-ink-muted">15 Dense → Top 5 Passages</span>
+                </div>
+                <div class="flex justify-center text-ink-muted select-none">↓</div>
+                <div class="p-3 bg-white rounded-lg border border-line flex items-center justify-between">
+                  <span class="text-ink-primary font-semibold">5. LiteLLM Gateway & Groq</span>
+                  <span class="text-ink-muted">Llama 3.3 70B & 20B Failover</span>
+                </div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-line-soft text-center">
+                <span class="text-xs text-ink-muted font-sans">Zero duplicate LLM calls • In-process CPU ONNX cross-attention</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         SECTION 01: PROJECT AT A GLANCE (RECRUITER 60-SECOND SUMMARY)
+         ======================================================================== -->
+    <section class="section-spacing bg-white border-y border-line" id="overview">
+      <div class="container-narrow">
+        <div class="mb-10">
+          <div class="section-eyebrow">01 // RECRUITER EXECUTIVE OVERVIEW</div>
+          <h2>Designed for Cluster Administrators & DevOps Engineers</h2>
+          <p class="section-desc">
+            The platform enables engineering teams to query Kubernetes manifests, Pod autoscaling behaviors, and defensive security configurations through a safe, conversational interface.
+          </p>
+        </div>
+
+        <!-- 3 Pillars Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="soft-card">
+            <div class="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 mb-3 font-mono text-sm font-semibold">01</div>
+            <h4 class="text-ink-primary font-semibold text-base mb-2">Defense-in-Depth AI Safety</h4>
+            <p class="text-xs text-ink-secondary leading-relaxed m-0">
+              User inputs pass through Unicode NFKC normalization, base64 payload extraction, regex heuristics (&lt;2ms), and Groq SLM domain policy verification before reaching the agent. Retrieved docs are isolated to block indirect prompt injections.
+            </p>
+          </div>
+
+          <div class="soft-card">
+            <div class="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-brand mb-3 font-mono text-sm font-semibold">02</div>
+            <h4 class="text-ink-primary font-semibold text-base mb-2">Two-Stage Hybrid Retrieval</h4>
+            <p class="text-xs text-ink-secondary leading-relaxed m-0">
+              Combines high-recall Qdrant vector search (15 candidates) with an in-process quantized ONNX cross-encoder (FlashRank ms-marco-MiniLM-L-6-v2) for top-5 precision, eliminating bi-encoder false positives on complex flags.
+            </p>
+          </div>
+
+          <div class="soft-card">
+            <div class="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 mb-3 font-mono text-sm font-semibold">03</div>
+            <h4 class="text-ink-primary font-semibold text-base mb-2">Zero-Downtime Resilience & SSE</h4>
+            <p class="text-xs text-ink-secondary leading-relaxed m-0">
+              OpenAI-compatible LiteLLM proxy container routes primary models with automatic failover to direct AsyncGroq inference. Delivers live tokens over Server-Sent Events with single-generation efficiency.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         SECTION 02: ARCHITECTURAL CONTRAST (PROBLEM VS SOLUTION)
+         ======================================================================== -->
+    <section class="section-spacing" id="contrast">
+      <div class="container-narrow">
+        <div class="mb-10">
+          <div class="section-eyebrow">02 // ARCHITECTURAL CONTRAST</div>
+          <h2>The Flaws of Naive RAG vs. Our Engineered Solution</h2>
+          <p class="section-desc">
+            Tutorial-style RAG architectures fail in enterprise production environments. Here is how our architecture systematically resolves each systemic vulnerability.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Problems Card -->
+          <div class="glass-card p-6 border-rose-200/70 bg-rose-50/20">
+            <div class="flex items-center gap-2 mb-4 text-rose-700 font-semibold text-base">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+              <span>Vulnerabilities in Standard RAG Pipelines</span>
+            </div>
+            <ul class="space-y-4" id="problem-comparison-list">
+              <!-- Dynamically populated from content.js -->
+            </ul>
+          </div>
+
+          <!-- Solutions Card -->
+          <div class="glass-card p-6 border-emerald-200/70 bg-emerald-50/20">
+            <div class="flex items-center gap-2 mb-4 text-emerald-800 font-semibold text-base">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              <span>Engineered Architectural Solutions</span>
+            </div>
+            <ul class="space-y-4" id="solution-comparison-list">
+              <!-- Dynamically populated from content.js -->
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         SECTION 03: SYSTEM ARCHITECTURE (WITH MERMAID & CONTROLS)
+         ======================================================================== -->
+    <section class="section-spacing bg-white border-y border-line" id="architecture">
+      <div class="container-narrow">
+        <div class="mb-8">
+          <div class="section-eyebrow">03 // SYSTEM ARCHITECTURE</div>
+          <h2>Multi-Tier Enterprise System Architecture</h2>
+          <p class="section-desc">
+            The platform follows a layered architecture running as a cohesive application. Click any architecture component below to inspect its interface contracts and failure mitigations.
+          </p>
+        </div>
+
+        <!-- Mermaid Diagram Box with Show, Hide, Expand Controls -->
+        <div class="diagram-box mb-10" data-diagram="systemArchitecture">
+          <div class="diagram-bar">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-brand"></span>
+              <span class="font-mono text-xs font-semibold text-ink-primary">System Architecture Flowchart</span>
+            </div>
+            <div class="diagram-actions">
+              <button class="diagram-ctrl-btn btn-toggle-diagram" aria-label="Toggle Diagram Visibility">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 15l-6-6-6 6"/></svg>
+                <span>Hide</span>
+              </button>
+              <button class="diagram-ctrl-btn btn-expand-diagram" aria-label="Expand Diagram Fullscreen">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                <span>Expand Fullscreen</span>
+              </button>
+            </div>
+          </div>
+          <div class="diagram-stage" id="mermaid-systemArchitecture">
+            <div class="text-xs text-ink-muted">Rendering architecture specification...</div>
+          </div>
+        </div>
+
+        <!-- Architecture Component Exploration Grid -->
+        <div class="mb-4">
+          <h3 class="text-lg font-semibold text-ink-primary mb-2">Interactive Subsystem Inspection</h3>
+          <p class="text-xs text-ink-muted mb-6">Select any component to inspect its verified code implementation file, inputs, outputs, and failure boundaries.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" id="arch-components-grid">
+            <!-- Dynamically populated from content.js -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         SECTION 04: REQUEST LIFECYCLE (WITH MERMAID & STEPPER)
+         ======================================================================== -->
+    <section class="section-spacing" id="workflow">
+      <div class="container-narrow">
+        <div class="mb-8">
+          <div class="section-eyebrow">04 // REQUEST LIFECYCLE</div>
+          <h2>End-to-End Operational Lifecycle & Sequence</h2>
+          <p class="section-desc">
+            Visual walkthrough of a user inquiry from HTTP POST /query/stream through the 4 security tiers, LangGraph planning, two-stage retrieval, and incremental token streaming.
+          </p>
+        </div>
+
+        <!-- Mermaid Sequence Diagram with Controls -->
+        <div class="diagram-box mb-10" data-diagram="requestLifecycle">
+          <div class="diagram-bar">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-brand"></span>
+              <span class="font-mono text-xs font-semibold text-ink-primary">Request Lifecycle Sequence Diagram</span>
+            </div>
+            <div class="diagram-actions">
+              <button class="diagram-ctrl-btn btn-toggle-diagram">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 15l-6-6-6 6"/></svg>
+                <span>Hide</span>
+              </button>
+              <button class="diagram-ctrl-btn btn-expand-diagram">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                <span>Expand Fullscreen</span>
+              </button>
+            </div>
+          </div>
+          <div class="diagram-stage" id="mermaid-requestLifecycle">
+            <div class="text-xs text-ink-muted">Rendering sequence specification...</div>
+          </div>
+        </div>
+
+        <!-- 6 Concrete Lifecycle Stages -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="glass-card p-5">
+            <div class="flex items-center justify-between mb-2">
+              <span class="badge-quiet badge-blue">Stage 1</span>
+              <code class="text-xs text-ink-muted font-mono">app/main.py</code>
+            </div>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">Query Ingestion & SSE Handshake</h4>
+            <p class="text-xs text-ink-secondary leading-relaxed m-0">FastAPI establishes persistent connection with Cache-Control: no-cache, X-Accel-Buffering: no, and yields initial event: status.</p>
+          </div>
+
+          <div class="glass-card p-5">
+            <div class="flex items-center justify-between mb-2">
+              <span class="badge-quiet badge-green">Stage 2</span>
+              <code class="text-xs text-ink-muted font-mono">app/security/</code>
+            </div>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">Defense-in-Depth Security Audit</h4>
+            <p class="text-xs text-ink-secondary leading-relaxed m-0">Evaluates input across 4 layers (NFKC, zero-width strip, base64 payload extraction, regex heuristics &lt;2ms, and Groq SLM domain classifier).</p>
+          </div>
+
+          <div class="glass-card p-5">
+            <div class="flex items-center justify-between mb-2">
+              <span class="badge-quiet badge-neutral">Stage 3</span>
+              <code class="text-xs text-ink-muted font-mono">app/agents/</code>
+            </div>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">LangGraph Intent Planning</h4>
+            <p class="text-xs text-ink-secondary leading-relaxed m-0">Planner node analyzes conversational history. Conversational queries skip retrieval to save latency; technical queries formulate search queries.</p>
+          </div>
+
+          <div class="glass-card p-5">
+            <div class="flex items-center justify-between mb-2">
+              <span class="badge-quiet badge-blue">Stage 4</span>
+              <code class="text-xs text-ink-muted font-mono">app/services/retrieval/</code>
+            </div>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">Two-Stage Retrieval & Trust Sanitization</h4>
+            <p class="text-xs text-ink-secondary leading-relaxed m-0">Qdrant vector query (15 chunks) -> indirect prompt injection scrubbing -> FlashRank CPU cross-encoder rerank to top 5 passages.</p>
+          </div>
+
+          <div class="glass-card p-5">
+            <div class="flex items-center justify-between mb-2">
+              <span class="badge-quiet badge-amber">Stage 5</span>
+              <code class="text-xs text-ink-muted font-mono">litellm/ & streaming.py</code>
+            </div>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">Resilient Gateway Inference</h4>
+            <p class="text-xs text-ink-secondary leading-relaxed m-0">Calls LiteLLM proxy container on port 4000. If offline, catches timeout in &lt;5s and transparently falls back to direct AsyncGroq.</p>
+          </div>
+
+          <div class="glass-card p-5">
+            <div class="flex items-center justify-between mb-2">
+              <span class="badge-quiet badge-green">Stage 6</span>
+              <code class="text-xs text-ink-muted font-mono">streaming.py</code>
+            </div>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">Incremental SSE Token Delivery</h4>
+            <p class="text-xs text-ink-secondary leading-relaxed m-0">Streams delta chunks over event: token with single-generation efficiency, terminating cleanly with event: done.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         SECTION 05: ENGINEERING DEEP DIVE (TABBED INTERFACE)
+         ======================================================================== -->
+    <section class="section-spacing bg-white border-y border-line" id="engineering">
+      <div class="container-narrow">
+        <div class="mb-8">
+          <div class="section-eyebrow">05 // ENGINEERING DEEP DIVE</div>
+          <h2>Documented Engineering Decisions & Subsystems</h2>
+          <p class="section-desc">
+            Explore the core technical mechanisms actually implemented in the codebase: two-stage retrieval, agentic state machines, resilient inference gateways, and universal multi-format ingestion.
+          </p>
+        </div>
+
+        <!-- Clean Apple-Style Tab Buttons -->
+        <div class="flex flex-wrap gap-2 p-1.5 bg-canvas-surface rounded-xl border border-line mb-6">
+          <button class="eng-tab-btn py-2 px-4 text-xs font-medium rounded-lg transition-all border border-brand bg-white text-ink-primary shadow-sm" data-tab="tab-retrieval">
+            Two-Stage Retrieval & FlashRank
+          </button>
+          <button class="eng-tab-btn py-2 px-4 text-xs font-medium rounded-lg transition-all border border-transparent text-ink-muted hover:text-ink-primary" data-tab="tab-orchestration">
+            LangGraph Agent StateGraph
+          </button>
+          <button class="eng-tab-btn py-2 px-4 text-xs font-medium rounded-lg transition-all border border-transparent text-ink-muted hover:text-ink-primary" data-tab="tab-gateway">
+            LiteLLM Gateway & Groq Failover
+          </button>
+          <button class="eng-tab-btn py-2 px-4 text-xs font-medium rounded-lg transition-all border border-transparent text-ink-muted hover:text-ink-primary" data-tab="tab-streaming">
+            True SSE Streaming Protocol
+          </button>
+          <button class="eng-tab-btn py-2 px-4 text-xs font-medium rounded-lg transition-all border border-transparent text-ink-muted hover:text-ink-primary" data-tab="tab-ingestion">
+            Universal Ingestion Pipeline
+          </button>
+        </div>
+
+        <!-- Tab 1: Retrieval -->
+        <div class="eng-tab-pane" id="tab-retrieval">
+          <div class="glass-card p-6">
+            <h3 class="text-lg font-semibold text-ink-primary mb-2">Stage 1 Recall (Qdrant) + Stage 2 Precision (FlashRank Cross-Encoder)</h3>
+            <p class="text-sm text-ink-secondary mb-6 reading-width">
+              Bi-encoders calculate cosine similarity between independent vector embeddings, which struggles with nuanced syntax (e.g. distinguishing subtle flag differences in kubectl or Ingress annotations). We couple broad Qdrant recall with local in-process cross-attention reranking.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div class="p-4 bg-canvas-surface border border-line rounded-xl">
+                <h4 class="text-sm font-semibold text-brand mb-2">Stage 1: Qdrant Dense Similarity Search</h4>
+                <ul class="text-xs text-ink-secondary space-y-1.5 list-disc pl-4">
+                  <li><strong>Interface:</strong> Modern <code>query_points</code> API over collection <code>enterprise_rag</code></li>
+                  <li><strong>Candidate Recall:</strong> Retrieves 15 raw document chunks with payload text and scores</li>
+                  <li><strong>Dual Embeddings:</strong> Primary Google Gemini <code>gemini-embedding-2-preview</code> (3072-dim) with 4-stage backoff; local CPU fallback <code>all-mpnet-base-v2</code> (768-dim)</li>
+                </ul>
+              </div>
+
+              <div class="p-4 bg-canvas-surface border border-line rounded-xl">
+                <h4 class="text-sm font-semibold text-indigo-600 mb-2">Stage 2: FlashRank Local CPU Cross-Encoder</h4>
+                <ul class="text-xs text-ink-secondary space-y-1.5 list-disc pl-4">
+                  <li><strong>Model:</strong> Quantized ONNX <code>ms-marco-MiniLM-L-6-v2</code> executing locally on CPU</li>
+                  <li><strong>Cross-Attention:</strong> Joint token evaluation of query and candidate passage simultaneously</li>
+                  <li><strong>Top-N Selection:</strong> Reranks and filters 15 candidates down to top 5 high-precision passages</li>
+                  <li><strong>Degradation:</strong> Falls back safely to Qdrant cosine ordering if ONNX engine throws</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Mermaid Retrieval Diagram with Controls -->
+            <div class="diagram-box" data-diagram="retrievalWorkflow">
+              <div class="diagram-bar">
+                <span class="font-mono text-xs font-semibold text-ink-primary">Retrieval & Reranking Workflow Diagram</span>
+                <div class="diagram-actions">
+                  <button class="diagram-ctrl-btn btn-toggle-diagram"><span>Hide</span></button>
+                  <button class="diagram-ctrl-btn btn-expand-diagram"><span>Expand Fullscreen</span></button>
+                </div>
+              </div>
+              <div class="diagram-stage" id="mermaid-retrievalWorkflow">
+                <div class="text-xs text-ink-muted">Rendering retrieval specification...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Agent Orchestration -->
+        <div class="eng-tab-pane hidden" id="tab-orchestration">
+          <div class="glass-card p-6">
+            <h3 class="text-lg font-semibold text-ink-primary mb-2">LangGraph Cyclic StateGraph & MemorySaver Checkpointing</h3>
+            <p class="text-sm text-ink-secondary mb-4 reading-width">
+              The agentic workflow in <code>app/agents/graph.py</code> implements a LangGraph cyclic state machine. The planner dynamically evaluates whether an inquiry requires documentation retrieval or conversational memory synthesis, saving 500ms+ latency on conversational turns.
+            </p>
+            <div class="p-4 bg-slate-900 text-slate-100 rounded-xl font-mono text-xs overflow-x-auto">
+              <pre>workflow = StateGraph(AgentState)
+workflow.add_node("planner", planner_node)
+workflow.add_node("retriever", retriever_node)
+workflow.add_node("responder", responder_node)
+
+workflow.set_entry_point("planner")
+workflow.add_conditional_edges(
+    "planner",
+    route_intent,
+    { "retrieve": "retriever", "respond": "responder" }
+)
+workflow.add_edge("retriever", "responder")
+workflow.add_edge("responder", END)
+
+checkpointer = MemorySaver()
+rag_agent = workflow.compile(checkpointer=checkpointer)</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Gateway & Failover -->
+        <div class="eng-tab-pane hidden" id="tab-gateway">
+          <div class="glass-card p-6">
+            <h3 class="text-lg font-semibold text-ink-primary mb-2">LiteLLM Gateway & Groq Zero-Downtime Failover</h3>
+            <p class="text-sm text-ink-secondary mb-6 reading-width">
+              LLM inference is decoupled through an OpenAI-compatible gateway. If the LiteLLM proxy container is offline or unreachable, the streaming pipeline automatically catches the timeout in &lt;5 seconds and transparently falls back to direct AsyncGroq inference.
+            </p>
+
+            <!-- Mermaid Gateway Diagram with Controls -->
+            <div class="diagram-box" data-diagram="gatewayFailover">
+              <div class="diagram-bar">
+                <span class="font-mono text-xs font-semibold text-ink-primary">LiteLLM Gateway & Provider Failover Diagram</span>
+                <div class="diagram-actions">
+                  <button class="diagram-ctrl-btn btn-toggle-diagram"><span>Hide</span></button>
+                  <button class="diagram-ctrl-btn btn-expand-diagram"><span>Expand Fullscreen</span></button>
+                </div>
+              </div>
+              <div class="diagram-stage" id="mermaid-gatewayFailover">
+                <div class="text-xs text-ink-muted">Rendering gateway specification...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: True SSE Streaming -->
+        <div class="eng-tab-pane hidden" id="tab-streaming">
+          <div class="glass-card p-6">
+            <h3 class="text-lg font-semibold text-ink-primary mb-2">True End-to-End Server-Sent Events (SSE) Protocol</h3>
+            <p class="text-sm text-ink-secondary mb-4 reading-width">
+              The streaming pipeline in <code>app/services/streaming.py</code> emits structured SSE frames. It completely resolves legacy double-generation bugs by invoking the streaming inference provider exactly once.
+            </p>
+
+            <div class="overflow-x-auto border border-line rounded-xl">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead class="bg-canvas-surface border-b border-line text-ink-muted font-mono uppercase">
+                  <tr><th class="p-3">Event Type</th><th class="p-3">Emitted When</th><th class="p-3">Payload Schema</th></tr>
+                </thead>
+                <tbody class="divide-y divide-line text-ink-secondary">
+                  <tr><td class="p-3 font-mono text-brand">status</td><td class="p-3">Stage transition occurs</td><td class="p-3 font-mono">{"stage": "security"|"planning"|"retrieval"|"generation", "message": "..."}</td></tr>
+                  <tr><td class="p-3 font-mono text-emerald-600">security</td><td class="p-3">Security audit finishes</td><td class="p-3 font-mono">{"decision": "ALLOW"|"BLOCK"|"REFUSE", "category": "...", "confidence": 1.0, "latency_ms": 1.6}</td></tr>
+                  <tr><td class="p-3 font-mono text-indigo-600">sources</td><td class="p-3">Reranking finishes</td><td class="p-3 font-mono">{"sources": ["Chunk 1 text...", "Chunk 2 text..."]}</td></tr>
+                  <tr><td class="p-3 font-mono text-ink-primary">token</td><td class="p-3">Model delta fragment arrives</td><td class="p-3 font-mono">{"text": "token fragment"}</td></tr>
+                  <tr><td class="p-3 font-mono text-ink-muted">done</td><td class="p-3">Stream finishes</td><td class="p-3 font-mono">{"thread_id": "...", "status": "Completed successfully", "sources": [...]}</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 5: Ingestion -->
+        <div class="eng-tab-pane hidden" id="tab-ingestion">
+          <div class="glass-card p-6">
+            <h3 class="text-lg font-semibold text-ink-primary mb-2">Universal Multi-Format Ingestion Engine</h3>
+            <p class="text-sm text-ink-secondary mb-4 reading-width">
+              The ingestion engine in <code>app/ingestion/processor.py</code> parses technical documentation across 5 distinct formats, performs semantic recursive chunking (800 chars / 150 overlap), caches JSON metadata locally, and upserts points to Qdrant.
+            </p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div class="p-4 bg-canvas-surface border border-line rounded-xl">
+                <h4 class="text-xs font-semibold text-ink-primary uppercase tracking-wider font-mono mb-1">Format Loaders</h4>
+                <p class="text-xs text-ink-secondary m-0">PDF (pypdf, pdfplumber), HTML (BeautifulSoup4), Word (python-docx), PowerPoint (python-pptx), and plain UTF-8 text.</p>
+              </div>
+              <div class="p-4 bg-canvas-surface border border-line rounded-xl">
+                <h4 class="text-xs font-semibold text-ink-primary uppercase tracking-wider font-mono mb-1">Semantic Chunking</h4>
+                <p class="text-xs text-ink-secondary m-0">LangChain RecursiveCharacterTextSplitter with 800-character chunk sizes and 150-character overlaps preserving manifest blocks.</p>
+              </div>
+              <div class="p-4 bg-canvas-surface border border-line rounded-xl">
+                <h4 class="text-xs font-semibold text-ink-primary uppercase tracking-wider font-mono mb-1">Local JSON Caching</h4>
+                <p class="text-xs text-ink-secondary m-0">Extracted passages and source metadata are cached in processed_data/&lt;source&gt;/&lt;file&gt;.json for offline auditing.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         SECTION 06: SECURITY & RELIABILITY (SANDBOX & MERMAID)
+         ======================================================================== -->
+    <section class="section-spacing" id="security">
+      <div class="container-narrow">
+        <div class="mb-8">
+          <div class="section-eyebrow">06 // SECURITY & RELIABILITY</div>
+          <h2>Defense-in-Depth AI Safety Gateway</h2>
+          <p class="section-desc">
+            Adversarial inputs are halted at the boundary before consuming inference tokens or vector database resources. Test the live reaction of our multi-tier defense across documented attack scenarios below.
+          </p>
+        </div>
+
+        <!-- 4 Security Tiers Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div class="glass-card p-4">
+            <span class="badge-quiet badge-blue mb-2">Layer 1</span>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">Input Normalizer</h4>
+            <p class="text-xs text-ink-secondary m-0">Unicode NFKC normalization, zero-width stripping, and candidate base64 extraction (length ≥ 16).</p>
+          </div>
+          <div class="glass-card p-4">
+            <span class="badge-quiet badge-neutral mb-2">Layer 2</span>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">Heuristic Signatures</h4>
+            <p class="text-xs text-ink-secondary m-0">Deterministic regex scanning (&lt;2ms) for DAN personas, system overrides, delimiters, and cyber abuse.</p>
+          </div>
+          <div class="glass-card p-4">
+            <span class="badge-quiet badge-green mb-2">Layer 3</span>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">Semantic Policy Engine</h4>
+            <p class="text-xs text-ink-secondary m-0">Groq SLM classifier verifying Kubernetes technical scope and politely refusing off-topic inquiries.</p>
+          </div>
+          <div class="glass-card p-4">
+            <span class="badge-quiet badge-amber mb-2">Layer 4</span>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">Context Trust Boundary</h4>
+            <p class="text-xs text-ink-secondary m-0">Sanitizes retrieved documentation, scrubs indirect prompt injection, and encloses text in strict delimiters.</p>
+          </div>
+        </div>
+
+        <!-- Mermaid Security Pipeline Diagram with Controls -->
+        <div class="diagram-box mb-10" data-diagram="securityPipeline">
+          <div class="diagram-bar">
+            <span class="font-mono text-xs font-semibold text-ink-primary">Security Validation Pipeline Diagram</span>
+            <div class="diagram-actions">
+              <button class="diagram-ctrl-btn btn-toggle-diagram"><span>Hide</span></button>
+              <button class="diagram-ctrl-btn btn-expand-diagram"><span>Expand Fullscreen</span></button>
+            </div>
+          </div>
+          <div class="diagram-stage" id="mermaid-securityPipeline">
+            <div class="text-xs text-ink-muted">Rendering security specification...</div>
+          </div>
+        </div>
+
+        <!-- Interactive Security Sandbox -->
+        <div class="glass-card p-6 mb-10">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-base font-semibold text-ink-primary m-0">Interactive Security Attack Scenario Sandbox</h3>
+            <span class="badge-quiet badge-neutral text-xs">Select Attack Vector Below</span>
+          </div>
+
+          <div class="flex flex-wrap gap-2 mb-6" id="security-scenarios-selector">
+            <!-- Buttons dynamically populated from content.js -->
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="p-4 bg-canvas-surface border border-line rounded-xl">
+              <div class="text-xs font-mono font-semibold uppercase text-ink-muted mb-2">INPUT QUERY</div>
+              <div id="sandbox-prompt" class="font-mono text-xs text-ink-primary leading-relaxed min-h-[50px]">
+                Loading scenario...
+              </div>
+              <div class="flex items-center gap-2 mt-4 pt-3 border-t border-line">
+                <span id="sandbox-decision" class="badge-quiet badge-green">ALLOW</span>
+                <span class="text-xs text-ink-muted font-mono ml-auto">Latency: <span id="sandbox-latency">1.6 ms</span></span>
+              </div>
+            </div>
+
+            <div class="p-4 bg-canvas-surface border border-line rounded-xl">
+              <div class="text-xs font-mono font-semibold uppercase text-ink-muted mb-2">GATEWAY AUDIT TRAIL</div>
+              <div class="text-xs text-ink-secondary mb-2">
+                <strong>Detector:</strong> <span id="sandbox-detector" class="text-brand font-mono">None</span>
+              </div>
+              <div class="text-xs text-ink-secondary mb-3">
+                <strong>Audit Observation:</strong> <span id="sandbox-outcome">Passed all 4 tiers.</span>
+              </div>
+              <div class="text-xs font-mono p-2.5 bg-white border border-line rounded-lg text-ink-secondary max-h-24 overflow-y-auto" id="sandbox-refusal">
+                None.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         SECTION 07: EVALUATION & TEST RESULTS (24 / 24 PYTEST PASSED)
+         ======================================================================== -->
+    <section class="section-spacing bg-white border-y border-line" id="evaluation">
+      <div class="container-narrow">
+        <div class="mb-8">
+          <div class="section-eyebrow">07 // RESULTS & EVALUATION</div>
+          <h2>Documented Automated Test Suite (24 / 24 Passing)</h2>
+          <p class="section-desc">
+            Every technical claim is validated by automated pytest suites running in CI/CD. The test suite covers security boundary enforcement, obfuscation decoding, SSE protocol framing, single generation guarantees, and async error isolation.
+          </p>
+        </div>
+
+        <div id="test-matrix-table" class="mb-6">
+          <!-- Dynamically populated from content.js -->
+        </div>
+
+        <div class="p-4 bg-canvas-surface border border-line rounded-xl text-xs text-ink-secondary leading-relaxed">
+          <strong class="text-ink-primary">Honest Engineering Observations:</strong> Single-generation guarantees are asserted via <code>test_single_llm_generation_call</code> (zero duplicate token calls). Regex signatures execute in &lt;2ms on CPU. In-process FlashRank cross-encoder reranks 15 candidates on CPU in ~0.05–0.10s.
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         SECTION 08: TECHNOLOGY STACK (CATEGORIZED GRID)
+         ======================================================================== -->
+    <section class="section-spacing" id="stack">
+      <div class="container-narrow">
+        <div class="mb-8">
+          <div class="section-eyebrow">08 // TECHNOLOGY STACK</div>
+          <h2>Categorized Engineering Technology Stack</h2>
+          <p class="section-desc">
+            All libraries and platforms in active use, categorized by their architectural responsibilities. Every component uses permissive open-source licenses with zero mandatory paid SaaS dependencies.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" id="tech-stack-grid">
+          <!-- Dynamically populated from content.js -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         SECTION 09: DEPLOYMENT ARCHITECTURE
+         ======================================================================== -->
+    <section class="section-spacing bg-white border-y border-line" id="deployment">
+      <div class="container-narrow">
+        <div class="mb-8">
+          <div class="section-eyebrow">09 // DEPLOYMENT TOPOLOGY</div>
+          <h2>Service Topology & Production Deployment</h2>
+          <p class="section-desc">
+            The platform is organized into discrete service boundaries supporting both lightweight local development and containerized production hosting.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div class="glass-card p-5">
+            <span class="badge-quiet badge-neutral text-xs mb-2">PORT 8501</span>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">Streamlit Web UI</h4>
+            <p class="text-xs text-ink-muted m-0">Interactive chat interface deployed on Streamlit Cloud (<a href="https://chatkubernetes.streamlit.app" target="_blank" rel="noopener noreferrer" class="text-brand underline">chatkubernetes.streamlit.app</a>).</p>
+          </div>
+          <div class="glass-card p-5">
+            <span class="badge-quiet badge-neutral text-xs mb-2">PORT 8000</span>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">FastAPI Backend</h4>
+            <p class="text-xs text-ink-muted m-0">High-performance async server exposing <code>/query/stream</code>, <code>/query</code>, and <code>/api/health</code>.</p>
+          </div>
+          <div class="glass-card p-5">
+            <span class="badge-quiet badge-neutral text-xs mb-2">PORT 4000</span>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">LiteLLM Gateway</h4>
+            <p class="text-xs text-ink-muted m-0">Docker container running <code>ghcr.io/berriai/litellm</code> with model routing and prompt caching.</p>
+          </div>
+          <div class="glass-card p-5">
+            <span class="badge-quiet badge-neutral text-xs mb-2">PORT 6333 / CLOUD</span>
+            <h4 class="text-sm font-semibold text-ink-primary mb-1">Qdrant Vector DB</h4>
+            <p class="text-xs text-ink-muted m-0">Qdrant Cloud cluster or local container hosting collection <code>enterprise_rag</code>.</p>
+          </div>
+        </div>
+
+        <!-- Nginx Buffering Callout -->
+        <div class="p-5 bg-canvas-surface border border-line rounded-xl">
+          <h4 class="text-sm font-semibold text-ink-primary mb-2">Production Nginx Reverse Proxy Configuration (Disabling SSE Buffering)</h4>
+          <p class="text-xs text-ink-secondary mb-3 reading-width">
+            When placing a reverse proxy (Nginx, Traefik, Ingress) in front of the FastAPI streaming endpoint, buffering must be disabled to ensure instantaneous token transport. FastAPI emits <code>X-Accel-Buffering: no</code> by default:
+          </p>
+          <div class="p-3 bg-slate-900 text-slate-100 rounded-lg font-mono text-xs overflow-x-auto">
+            <pre>location /query/stream {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Connection '';
+    proxy_http_version 1.1;
+    chunked_transfer_encoding off;
+    proxy_buffering off;
+    proxy_cache off;
+}</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         SECTION 10: DOCUMENTATION SUITE (15 VERIFIED MARKDOWN FILES)
+         ======================================================================== -->
+    <section class="section-spacing" id="docs">
+      <div class="container-narrow">
+        <div class="mb-8">
+          <div class="section-eyebrow">10 // DOCUMENTATION SUITE</div>
+          <h2>Verified Project Technical Documentation</h2>
+          <p class="section-desc">
+            Explore the complete 15-document technical suite in the repository. Each document provides thorough specifications, diagrams, and developer guides.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" id="docs-catalog-grid">
+          <!-- Dynamically populated from content.js -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         SECTION 11: TRANSPARENCY & FUTURE SCOPE
+         ======================================================================== -->
+    <section class="section-spacing bg-white border-y border-line" id="roadmap">
+      <div class="container-narrow">
+        <div class="mb-8">
+          <div class="section-eyebrow">11 // TRANSPARENCY & ROADMAP</div>
+          <h2>Documented Limitations & Planned Enhancements</h2>
+          <p class="section-desc">
+            Engineering integrity is prioritized over unsupported claims. Here is the verified status of current limitations and planned improvements.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <h3 class="text-base font-semibold text-ink-primary mb-3 flex items-center gap-2">
+              <span class="badge-quiet badge-neutral text-xs">CURRENT</span>
+              <span>Known Limitations</span>
+            </h3>
+            <div class="space-y-3" id="limitations-list">
+              <!-- Dynamically populated from content.js -->
+            </div>
+          </div>
+
+          <div>
+            <h3 class="text-base font-semibold text-ink-primary mb-3 flex items-center gap-2">
+              <span class="badge-quiet badge-blue text-xs">FUTURE</span>
+              <span>Planned Architectural Roadmap</span>
+            </h3>
+            <div class="space-y-3" id="roadmap-list">
+              <!-- Dynamically populated from content.js -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         CLOSING & CONTACT SECTION
+         ======================================================================== -->
+    <footer class="section-spacing bg-canvas-primary border-t border-line">
+      <div class="container-narrow">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 pb-8 border-b border-line">
+          <div>
+            <h3 class="text-xl font-semibold text-ink-primary mb-1">
+              Enterprise Kubernetes Agentic RAG Platform
+            </h3>
+            <p class="text-xs text-ink-secondary m-0">
+              Designed and engineered by <strong>Prince Singh</strong>. Built for resilience, AI safety, and cloud-native reliability.
+            </p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3">
+            <a href="https://chatkubernetes.streamlit.app" target="_blank" rel="noopener noreferrer"
+               class="btn-apple btn-apple-primary btn-apple-sm">
+              <span>Launch Live App ↗</span>
+            </a>
+            <a href="https://github.com/vibieprince/RAG-Chatbot-for-Kubernetes" target="_blank" rel="noopener noreferrer"
+               class="btn-apple btn-apple-secondary btn-apple-sm">
+              <span>GitHub Repository ↗</span>
+            </a>
+            <a href="mailto:princesingh15122004@gmail.com"
+               class="btn-apple btn-apple-secondary btn-apple-sm">
+              <span>Contact ✉</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-ink-muted font-mono">
+          <div>© 2026 Prince Singh. Released under the MIT License.</div>
+          <div>Python 3.10+ • Qdrant • LangGraph • LiteLLM • Guardrails AI</div>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <!-- ========================================================================
+       MODAL OVERLAY FOR EXPANDED MERMAID DIAGRAMS
+       ======================================================================== -->
+  <div class="diagram-modal-overlay" id="diagram-modal" role="dialog" aria-modal="true" aria-labelledby="diagram-modal-title">
+    <div class="diagram-modal-window">
+      <div class="diagram-modal-header">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-brand"></span>
+          <h4 id="diagram-modal-title" class="text-sm font-semibold text-ink-primary font-mono m-0">Diagram Title</h4>
+        </div>
+        <button id="diagram-modal-close" class="p-1 text-ink-muted hover:text-ink-primary transition-colors" aria-label="Close Diagram View">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="diagram-modal-body" id="diagram-modal-svg">
+        <!-- Expanded SVG rendered here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       COMPONENT EXPLORATION SLIDE-OVER DRAWER
+       ======================================================================== -->
+  <div class="sheet-backdrop" id="component-drawer-backdrop"></div>
+  <aside class="sheet-panel" id="component-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <div class="sheet-header">
+      <div>
+        <div id="drawer-layer" class="text-xs uppercase font-mono tracking-wider text-brand font-semibold mb-0.5">LAYER</div>
+        <h3 id="drawer-title" class="text-base font-semibold text-ink-primary m-0">Component Specification</h3>
+      </div>
+      <button id="component-drawer-close" class="p-1 text-ink-muted hover:text-ink-primary transition-colors" aria-label="Close Drawer">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+    <div class="sheet-body" id="drawer-body">
+      <!-- Dynamically populated on component click -->
+    </div>
+  </aside>
+
+  <!-- Application Scripts (Strict vanilla JS modules) -->
+  <script src="./assets/js/content.js"></script>
+  <script src="./assets/js/diagrams.js"></script>
+  <script src="./assets/js/interactions.js"></script>
+  <script src="./assets/js/navigation.js"></script>
+  <script src="./assets/js/main.js"></script>
+</body>
+</html>

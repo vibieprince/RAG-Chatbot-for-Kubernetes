@@ -1,0 +1,27 @@
+{
+  "name": "enterprise-kubernetes-rag-showcase",
+  "version": "2.0.0",
+  "description": "Apple-inspired recruiter-facing engineering showcase for Enterprise Kubernetes Agentic RAG Platform",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./src/css/input.css -o ./dist/assets/css/styles.css --minify",
+    "serve": "python -m http.server 3000 --directory dist",
+    "serve:src": "python -m http.server 3000",
+    "preview": "python -m http.server 3000"
+  },
+  "keywords": [
+    "kubernetes",
+    "rag",
+    "agentic-ai",
+    "engineering-showcase",
+    "recruiter-portfolio",
+    "apple-design"
+  ],
+  "author": "Prince Singh <princesingh15122004@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3"
+  }
+}

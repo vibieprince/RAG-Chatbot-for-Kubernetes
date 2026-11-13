@@ -1,0 +1,125 @@
+/* ==========================================================================
+   UBER-INSPIRED ENGINEERING SHOWCASE DESIGN SYSTEM
+   Theme: Monochromatic Editorial Minimalist with Restrained Technical Accents
+   ========================================================================== */
+
+:root {
+  /* Surface Colors */
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F8F9FA;
+  --bg-tertiary: #F1F3F5;
+  --bg-subtle: #F3F4F6;
+  
+  /* Dark Surface Elements (for high-contrast technical depth) */
+  --bg-dark-primary: #0A0B0D;
+  --bg-dark-surface: #12141A;
+  --bg-dark-card: #181B22;
+  --bg-dark-card-hover: #1F232C;
+  --bg-dark-border: #232732;
+  --bg-dark-border-subtle: #1C2029;
+  
+  /* Text Colors */
+  --text-primary: #0A0A0A;
+  --text-secondary: #4B5563;
+  --text-muted: #6B7280;
+  --text-subtle: #9CA3AF;
+  
+  /* Dark Mode Text */
+  --text-dark-primary: #F9FAFB;
+  --text-dark-secondary: #D1D5DB;
+  --text-dark-muted: #9CA3AF;
+  --text-dark-subtle: #6B7280;
+  
+  /* Border & Divider Colors */
+  --border-primary: #E5E7EB;
+  --border-secondary: #E0E2E7;
+  --border-dark: #1F2937;
+  --border-focus: #0A0A0A;
+
+  /* Technical Status & Accent Colors (Restrained application) */
+  --accent-blue: #2563EB;
+  --accent-blue-subtle: rgba(37, 99, 235, 0.08);
+  --accent-blue-glow: rgba(37, 99, 235, 0.25);
+  
+  --accent-green: #059669;
+  --accent-green-subtle: rgba(5, 150, 105, 0.08);
+  --accent-green-bright: #10B981;
+  
+  --accent-violet: #7C3AED;
+  --accent-violet-subtle: rgba(124, 58, 237, 0.08);
+  
+  --accent-red: #DC2626;
+  --accent-red-subtle: rgba(220, 38, 38, 0.08);
+  
+  --accent-amber: #D97706;
+  --accent-amber-subtle: rgba(217, 119, 6, 0.08);
+
+  /* Typography Scale */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  
+  --font-size-xs: 0.75rem;     /* 12px */
+  --font-size-sm: 0.875rem;    /* 14px */
+  --font-size-base: 1rem;      /* 16px */
+  --font-size-lg: 1.125rem;    /* 18px */
+  --font-size-xl: 1.25rem;     /* 20px */
+  --font-size-2xl: 1.5rem;     /* 24px */
+  --font-size-3xl: 1.875rem;   /* 30px */
+  --font-size-4xl: 2.25rem;    /* 36px */
+  --font-size-5xl: 3rem;       /* 48px */
+  --font-size-6xl: 3.75rem;    /* 60px */
+
+  --tracking-tight: -0.03em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.04em;
+  --tracking-widest: 0.1em;
+
+  --line-height-tight: 1.1;
+  --line-height-snug: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.65;
+
+  /* Spacing Scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+  --space-32: 8rem;
+
+  /* Layout Containers */
+  --container-max: 1240px;
+  --container-wide: 1400px;
+  --header-height: 72px;
+
+  /* Border Radii (Minimal Uber style) */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 9999px;
+
+  /* Shadows (Subtle, purposeful) */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+  --shadow-dark-card: 0 4px 20px rgba(0, 0, 0, 0.4);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-normal: 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-slow: 400ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Z-Index */
+  --z-base: 1;
+  --z-sticky: 100;
+  --z-modal: 1000;
+  --z-toast: 1100;
+}

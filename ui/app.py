@@ -263,7 +263,7 @@ with st.sidebar:
 
 st.title("🤖 Enterprise Agentic Assistant")
 st.caption(
-    "Ask questions about Kubernetes, container orchestration, and cluster administration."
+    "Ask questions about Kubernetes, container orchestration, and cluster administration.\n The backend is hosted on Render's free tier so first request may take time to wake up server..."
 )
 
 

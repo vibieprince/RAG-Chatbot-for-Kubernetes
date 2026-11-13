@@ -1,0 +1,196 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   APPLE-INSPIRED REFINED DESIGN SYSTEM & LIGHT-MODE STRICT SPECIFICATION
+   ========================================================================== */
+
+/* Strict Light-Mode Enforcement (Never switch to dark even on dark OS theme) */
+:root {
+  color-scheme: light only;
+  --bg-primary: #F5F7FA;
+  --bg-secondary: #FFFFFF;
+  --bg-surface: #F0F3F7;
+  --text-primary: #202631;
+  --text-secondary: #667085;
+  --text-muted: #8993A4;
+  --accent-primary: #4F83CC;
+  --accent-light: #E8F0FC;
+  --accent-hover: #3E6FB3;
+  --border-line: #E3E8EF;
+  --border-soft: #EDF1F7;
+  --shadow-subtle: 0 1px 3px 0 rgba(16, 24, 40, 0.04), 0 1px 2px -1px rgba(16, 24, 40, 0.02);
+  --shadow-glass: 0 8px 32px 0 rgba(16, 24, 40, 0.05);
+  --shadow-elevated: 0 12px 36px -4px rgba(16, 24, 40, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: light only;
+  }
+}
+
+html {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  scroll-behavior: smooth;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Apple-Style Glassmorphism Surfaces */
+.glass-surface {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(227, 232, 239, 0.8);
+}
+
+.glass-nav {
+  background: rgba(245, 247, 250, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(227, 232, 239, 0.85);
+}
+
+.glass-card {
+  background: #FFFFFF;
+  border: 1px solid #E3E8EF;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px 0 rgba(16, 24, 40, 0.03);
+  transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card:hover {
+  border-color: #D0D7E2;
+  box-shadow: 0 6px 20px -2px rgba(16, 24, 40, 0.06);
+}
+
+.soft-card {
+  background: #F0F3F7;
+  border: 1px solid #E3E8EF;
+  border-radius: 12px;
+}
+
+/* Typography Hierarchy */
+.text-balance {
+  text-wrap: balance;
+}
+
+.reading-width {
+  max-width: 68ch;
+}
+
+/* Diagram Container & Controls */
+.diagram-container {
+  background: #FFFFFF;
+  border: 1px solid #E3E8EF;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 250ms ease;
+}
+
+.diagram-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #F9FAFB;
+  border-bottom: 1px solid #E3E8EF;
+  font-size: 0.8125rem;
+}
+
+.diagram-viewport {
+  padding: 24px;
+  overflow-x: auto;
+  min-height: 200px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #FFFFFF;
+}
+
+.diagram-viewport svg {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+/* Diagram Fullscreen / Expanded Modal */
+.diagram-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(32, 38, 49, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.diagram-modal-backdrop.active {
+  display: flex;
+}
+
+.diagram-modal-content {
+  background: #FFFFFF;
+  border-radius: 16px;
+  border: 1px solid #E3E8EF;
+  width: 100%;
+  max-width: 1280px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 48px -12px rgba(16, 24, 40, 0.18);
+  overflow: hidden;
+}
+
+.diagram-modal-body {
+  padding: 32px;
+  overflow: auto;
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+/* Custom Scrollbars (Light & subtle) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F0F3F7;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}

@@ -1,0 +1,19 @@
+{
+  "name": "kubernetes-rag-showcase",
+  "version": "2.0.0",
+  "description": "Recruiter-Facing Engineering Showcase for Enterprise Kubernetes Agentic RAG Platform",
+  "private": true,
+  "scripts": {
+    "start": "npx serve .",
+    "serve": "npx serve -l 3000 .",
+    "preview": "python -m http.server 3000"
+  },
+  "keywords": [
+    "kubernetes",
+    "rag",
+    "engineering-showcase",
+    "recruiter-website"
+  ],
+  "author": "Prince Singh <princesingh15122004@gmail.com>",
+  "license": "MIT"
+}

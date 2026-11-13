@@ -49,6 +49,7 @@ Standard RAG architectures often suffer from critical operational flaws:
 - **Two-Stage Semantic Retrieval**: Qdrant modern `query_points` dense vector queries coupled with local CPU cross-encoder reranking.
 - **Dual-Mode Embeddings**: Primary Google Gemini embeddings (`gemini-embedding-2-preview`, 3072-dim) with automatic fallback to local CPU `sentence-transformers` (`all-mpnet-base-v2`, 768-dim).
 - **Interactive Streamlit UI**: Dark-mode web interface (`ui/app.py`) featuring live token streaming, collapsible retrieved source inspection, and security stage indicators.
+- **Recruiter-Facing Engineering Showcase**: Standalone Apple-inspired technical product showcase (`recruiter-site/` and `/` on FastAPI) featuring light-mode frosted-glass aesthetics, local Mermaid.js architecture diagrams with expand/modal controls, component inspector sheets, and automated GitHub Pages deployment.
 - **Comprehensive Automated Test Suite**: 24 tests validating security boundaries, obfuscation handling, SSE framing, single generation guarantees, and error handling.
 
 ---
@@ -343,6 +344,14 @@ RAG CHATBOT FOR KUBERNETES/
 │   └── test_streaming.py                # 6 Streaming lifecycle & SSE protocol tests
 ├── ui/
 │   └── app.py                           # Modern interactive Streamlit chat interface
+├── recruiter-site/                      # Apple-inspired recruiter-facing engineering showcase
+│   ├── index.html                       # Semantic HTML5 showcase landing page (Light Mode only)
+│   ├── src/                             # Source CSS (Tailwind), JS modules, and Apple design tokens
+│   │   ├── css/                         # Apple-inspired light-mode stylesheet & glassmorphism
+│   │   ├── js/                          # Mermaid diagrams, component drawer, and security sandbox
+│   │   └── assets/                      # Minimalist favicon and graphics
+│   ├── dist/                            # Ready-to-deploy static build for GitHub Pages
+│   └── README.md                        # Local preview & GitHub Pages deployment guide
 │
 ├── .env.example                         # Environment variable template
 ├── .gitignore                           # Git ignore rules
@@ -427,7 +436,8 @@ streamlit run ui/app.py --server.port 8501
 ```
 
 Open your browser to:
-- **Chat Interface**: [http://localhost:8501/](http://localhost:8501/)
+- **Recruiter Showcase Website**: [http://localhost:8000/](http://localhost:8000/) *(or via `python -m http.server 3000 --directory website` at [http://localhost:3000/](http://localhost:3000/))*
+- **Chat Interface**: [http://localhost:8501/](http://localhost:8501/) *(or live at [chatkubernetes.streamlit.app](https://chatkubernetes.streamlit.app))*
 - **FastAPI Interactive Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
 - **FastAPI Health Endpoint**: [http://localhost:8000/api/health](http://localhost:8000/api/health)
 
