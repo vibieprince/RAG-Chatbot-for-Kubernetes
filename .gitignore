@@ -6,3 +6,4 @@ processed_data
 .logfire
 .pytest_cache
 tests
+node_modules/

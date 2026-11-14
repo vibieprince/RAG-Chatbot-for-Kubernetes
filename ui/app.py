@@ -311,14 +311,14 @@ with st.sidebar:
 
 st.title("🤖 Enterprise Agentic Assistant")
 st.caption(
-    "Ask questions about Kubernetes, container orchestration, and cluster administration.\n Services are hosted on Render free tier; parallel wake-up automatically warms LiteLLM and FastAPI simultaneously."
+    "Ask questions about Kubernetes, container orchestration, and cluster administration."
 )
 st.markdown(
     """
     <div style="
         background-color: var(--secondary-background-color);
-        color: var(--text-color);
-        border-left: 4px solid var(--primary-color);
+        color: orange;
+        border-left: 4px solid red;
         border-radius: 8px;
         padding: 10px 14px;
         margin: 8px 0 18px 0;
