@@ -313,6 +313,28 @@ st.title("🤖 Enterprise Agentic Assistant")
 st.caption(
     "Ask questions about Kubernetes, container orchestration, and cluster administration.\n Services are hosted on Render free tier; parallel wake-up automatically warms LiteLLM and FastAPI simultaneously."
 )
+st.markdown(
+    """
+    <div style="
+        background-color: var(--secondary-background-color);
+        color: var(--text-color);
+        border-left: 4px solid var(--primary-color);
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin: 8px 0 18px 0;
+        font-size: 0.84rem;
+        line-height: 1.5;
+    ">
+        <strong>Free-tier deployment notice:</strong>
+        This project is hosted on Render's free service tier. After a period
+        of inactivity, services may spin down and need some time to wake up.
+        The first request can take longer than usual.
+        <strong>If no response appears after 1 minute, refresh this page
+        and submit your question again.</strong>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # --------------------------------------------------
