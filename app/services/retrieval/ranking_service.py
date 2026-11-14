@@ -1,26 +1,33 @@
+import os
+import threading
 import time
 import logfire
 from flashrank import Ranker, RerankRequest
 
-# Lazy initialization - Ranker is loaded on first use to ensure logfire.configure() has run
+# Thread-safe singleton initialization: Ranker is loaded once per process
 _ranker = None
+_ranker_lock = threading.Lock()
 
 
 def _get_ranker() -> Ranker:
     """
-    Initializes the FlashRank engine lazily. 
+    Initializes the FlashRank engine as a thread-safe process singleton.
     FlashRank uses a local ONNX model (ms-marco-MiniLM-L-6-v2) for ultra-fast reranking.
+    Guarantees that the ONNX model is loaded into memory exactly once per backend process.
     """
     global _ranker
     if _ranker is None:
-        logfire.info("🧠 Initializing FlashRank Model (TinyBERT) locally...")
-        try:
-            # We use a specific cache directory to avoid permission issues in production
-            _ranker = Ranker(cache_dir="/tmp/flashrank")
-        except Exception:
-            _ranker = Ranker()
+        with _ranker_lock:
+            if _ranker is None:
+                logfire.info("🧠 Initializing FlashRank Cross-Encoder Model locally...")
+                cache_dir = os.environ.get("FLASHRANK_CACHE_DIR", os.path.join(os.path.expanduser("~"), ".cache", "flashrank"))
+                try:
+                    os.makedirs(cache_dir, exist_ok=True)
+                    _ranker = Ranker(cache_dir=cache_dir)
+                except Exception as cache_err:
+                    logfire.warning(f"Could not use cache_dir {cache_dir} ({cache_err}); initializing default Ranker")
+                    _ranker = Ranker()
     return _ranker
-
 
 
 def rerank_documents(query: str, documents: list[str], top_n: int = 5) -> list[str]:

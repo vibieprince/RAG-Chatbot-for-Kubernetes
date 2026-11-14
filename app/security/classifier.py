@@ -45,13 +45,23 @@ class SemanticSecurityClassifier:
     def _get_llm(self):
         if not self._initialized:
             try:
-                # Use available Groq model with fast timeout
+                # Use current verified Groq SLM with fast timeout
+                groq_key = (
+                    settings.GROQ_API_KEY.get_secret_value()
+                    if hasattr(settings.GROQ_API_KEY, "get_secret_value") and settings.GROQ_API_KEY
+                    else (str(settings.GROQ_API_KEY) if settings.GROQ_API_KEY else "")
+                )
+                if not groq_key:
+                    self._llm = None
+                    self._initialized = True
+                    return None
+
                 self._llm = ChatGroq(
-                    api_key=settings.GROQ_API_KEY,
-                    model="openai/gpt-oss-20b",
+                    api_key=groq_key,
+                    model=settings.GROQ_FALLBACK_MODEL,
                     temperature=0.0,
                     max_tokens=150,
-                    request_timeout=5.0
+                    request_timeout=3.0
                 )
                 self._initialized = True
             except Exception as e:

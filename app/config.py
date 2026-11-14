@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from pydantic import SecretStr
+
 # Load environment variables
 load_dotenv()
 
@@ -17,7 +18,8 @@ class Settings:
     # --- REASONING ENGINE (GROQ) ---
     groq_key = os.getenv("GROQ_API_KEY")
     GROQ_API_KEY: SecretStr | None = SecretStr(groq_key) if groq_key else None
-    GROQ_MODEL = "llama-3.3-70b-versatile"
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    GROQ_FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "openai/gpt-oss-20b")
     GROQ_FALLBACK_API_KEY = os.getenv("GROQ_FALLBACK_API_KEY")
 
     BATCH_SIZE = int(os.getenv("BATCH_SIZE", "50"))
@@ -38,11 +40,12 @@ class Settings:
 
     LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY")
     LITELLM_HEALTH_URL = os.getenv("LITELLM_HEALTH_URL")
-    LITELLM_WAKEUP_TIMEOUT = float(os.getenv("LITELLM_WAKEUP_TIMEOUT", "25.0"))
-    LITELLM_INITIAL_BACKOFF = float(os.getenv("LITELLM_INITIAL_BACKOFF", "0.5"))
+    LITELLM_WAKEUP_TIMEOUT = float(os.getenv("LITELLM_WAKEUP_TIMEOUT", "120.0"))
+    LITELLM_INITIAL_BACKOFF = float(os.getenv("LITELLM_INITIAL_BACKOFF", "1.0"))
     LITELLM_BACKOFF_FACTOR = float(os.getenv("LITELLM_BACKOFF_FACTOR", "1.5"))
-    LITELLM_MAX_RETRIES = int(os.getenv("LITELLM_MAX_RETRIES", "6"))
-    LITELLM_READINESS_CACHE_TTL = float(os.getenv("LITELLM_READINESS_CACHE_TTL", "30.0"))
+    LITELLM_MAX_BACKOFF = float(os.getenv("LITELLM_MAX_BACKOFF", "8.0"))
+    LITELLM_MAX_RETRIES = int(os.getenv("LITELLM_MAX_RETRIES", "40"))
+    LITELLM_READINESS_CACHE_TTL = float(os.getenv("LITELLM_READINESS_CACHE_TTL", "60.0"))
 
 # Apply LangChain environment variables for automatic tracing
 os.environ["LANGCHAIN_TRACING_V2"] = os.getenv("LANGSMITH_TRACING", "true")

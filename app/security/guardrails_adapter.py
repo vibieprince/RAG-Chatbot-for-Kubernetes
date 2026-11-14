@@ -11,21 +11,21 @@ Architecture & Design:
    and deterministic local execution without hanging on network timeouts.
 
 2. Native Validator Implementations (subclassing guardrails.validator_base.Validator):
-   - KubernetesSignatureValidator: Fast regex & heuristic detection for direct jailbreaks,
+   - KubernetesSignatureValidator (MANDATORY): Fast regex & heuristic detection for direct jailbreaks,
      persona escalation (DAN), ChatML/Llama instruction delimiters, and destructive cyber attacks.
-   - KubernetesScopeValidator: Semantic policy and domain scope validator verifying that
+   - KubernetesScopeValidator (MANDATORY): Semantic policy and domain scope validator verifying that
      queries pertain to Kubernetes, container orchestration, systems engineering, or
      defensive cluster hardening.
-   - MLJailbreakAdapter: Adapter for ML-based jailbreak classification. Gracefully records
-     and isolates upstream model config issues (e.g. Transformers id2label mismatch) so that
-     validator unavailability is NEVER falsely reported as a user policy violation.
+   - MLJailbreakAdapter (OPTIONAL): Adapter for ML-based jailbreak classification (zhx123/ftrobertallm).
+     Accurately isolates missing dependencies and model config issues without crashing or falsely
+     reporting uninitialized detectors as active.
 
-3. Error Handling Architecture:
+3. Safe Failure Architecture:
    - Valid Input -> Decision.ALLOW (passes to LangGraph agent)
    - Adversarial Input -> Decision.BLOCK / Decision.REFUSE (safe structured refusal)
-   - Validator Unavailable -> Clearly tracked and reported with diagnostic status;
-     layered defense ensures active heuristics protect the boundary.
-   - Unexpected Runtime Exception -> Handled gracefully with controlled security error.
+   - Mandatory Validator Unavailable -> Fails closed safely with structured refusal.
+   - Optional ML Validator Unavailable -> Explicitly reported as disabled/degraded, while active heuristic
+     and semantic layers protect the boundary.
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ logger = logging.getLogger(__name__)
 @register_validator(name="k8s/signature_validator", data_type="string")
 class KubernetesSignatureValidator(Validator):
     """
-    Guardrails AI Validator: Scans input text against direct adversarial jailbreak,
+    Guardrails AI Validator (MANDATORY): Scans input text against direct adversarial jailbreak,
     delimiter injection, and offensive cyber abuse signatures.
     """
 
@@ -111,7 +111,7 @@ class KubernetesSignatureValidator(Validator):
 @register_validator(name="k8s/scope_validator", data_type="string")
 class KubernetesScopeValidator(Validator):
     """
-    Guardrails AI Validator: Validates input against the Kubernetes domain policy.
+    Guardrails AI Validator (MANDATORY): Validates input against the Kubernetes domain policy.
     Permits technical administration, cluster operations, and defensive security.
     Refuses out-of-scope inquiries (recipes, poetry, general entertainment) and cyber abuse.
     """
@@ -150,8 +150,8 @@ class KubernetesScopeValidator(Validator):
 class MLJailbreakAdapter:
     """
     Adapter for Guardrails AI DetectJailbreak validator (zhx123/ftrobertallm).
-    Investigates and documents upstream model compatibility without crashing.
-    Initializes lazily to prevent blocking application/test startup.
+    Accurately isolates missing dependencies and model config issues without crashing.
+    Does NOT report active if the underlying module cannot be loaded.
     """
 
     def __init__(self):
@@ -165,21 +165,31 @@ class MLJailbreakAdapter:
             return
         self._attempted = True
         try:
-            from guardrails_ai.detect_jailbreak import DetectJailbreak  # type: ignore
+            try:
+                from guardrails_ai.detect_jailbreak import DetectJailbreak  # type: ignore
+            except (ImportError, ModuleNotFoundError):
+                from guardrails.hub import DetectJailbreak  # type: ignore
 
             self._validator = DetectJailbreak(threshold=0.81, on_fail=None)
             self.available = True
             logfire.info("Guardrails AI DetectJailbreak ML validator initialized successfully.")
+        except (ImportError, ModuleNotFoundError) as exc:
+            self.init_error = f"DetectJailbreak not installed: {exc}"
+            self.available = False
+            logfire.info(
+                "Guardrails AI DetectJailbreak unavailable ({error}). Layered heuristic & semantic validators remain active.",
+                error=str(exc),
+            )
         except TypeError as exc:
-            # Documented upstream issue: zhx123/ftrobertallm config.json contains integer id2label
-            # which fails strict dataclass validation in modern Transformers / huggingface_hub.
             self.init_error = f"DetectJailbreak upstream model config incompatibility: {exc}"
+            self.available = False
             logfire.warning(
                 "Guardrails AI DetectJailbreak unavailable ({error}). Layered heuristic & semantic validators remain active.",
                 error=str(exc),
             )
         except Exception as exc:
             self.init_error = f"DetectJailbreak initialization error: {exc}"
+            self.available = False
             logfire.warning(
                 "Guardrails AI DetectJailbreak initialization failed ({error}).",
                 error=str(exc),
@@ -233,6 +243,53 @@ class GuardrailsSecurityFramework:
             )
             self.guard = None
 
+    def get_security_status(self) -> Dict[str, Any]:
+        """
+        Accurately reports status of all mandatory and optional validators.
+        Does NOT report complete security health or jailbreak detector as active if unavailable.
+        """
+        self.ml_adapter.ensure_initialized()
+        sig_active = self.sig_validator is not None
+        scope_active = self.scope_validator is not None
+        ml_active = self.ml_adapter.available
+        mandatory_healthy = sig_active and scope_active
+
+        if mandatory_healthy and ml_active:
+            overall_status = "healthy"
+        elif mandatory_healthy and not ml_active:
+            overall_status = "degraded"
+        else:
+            overall_status = "unhealthy"
+
+        return {
+            "overall_status": overall_status,
+            "healthy": overall_status == "healthy",
+            "degraded": overall_status == "degraded",
+            "all_validators_active": mandatory_healthy and ml_active,
+            "mandatory_healthy": mandatory_healthy,
+            "validators": {
+                "signature_validator": {
+                    "name": "KubernetesSignatureValidator",
+                    "mandatory": True,
+                    "active": sig_active,
+                    "status": "active" if sig_active else "failed",
+                },
+                "scope_validator": {
+                    "name": "KubernetesScopeValidator",
+                    "mandatory": True,
+                    "active": scope_active,
+                    "status": "active" if scope_active else "failed",
+                },
+                "ml_jailbreak_detector": {
+                    "name": "DetectJailbreak",
+                    "mandatory": False,
+                    "active": ml_active,
+                    "status": "active" if ml_active else "disabled",
+                    "error": self.ml_adapter.init_error if not ml_active else None,
+                },
+            },
+        }
+
     def evaluate(self, normalized_text: str, raw_query: str) -> Optional[Tuple[Decision, SecurityCategory, float, str, List[str]]]:
         """
         Executes Guardrails AI validation.
@@ -243,7 +300,17 @@ class GuardrailsSecurityFramework:
         """
         detectors_hit: List[str] = []
 
-        # Step 1: Signature validator (Fast regex / heuristics)
+        # Fail safely if mandatory validators are missing
+        if self.sig_validator is None or self.scope_validator is None:
+            return (
+                Decision.REFUSE,
+                SecurityCategory.POLICY_VIOLATION,
+                1.0,
+                "Mandatory security validator unavailable",
+                ["SecurityGateFailSafe"],
+            )
+
+        # Step 1: Signature validator (Fast regex / heuristics) - MANDATORY
         sig_result = self.sig_validator.validate(normalized_text)
         if isinstance(sig_result, FailResult):
             meta = sig_result.metadata or {}
@@ -258,7 +325,7 @@ class GuardrailsSecurityFramework:
             )
             return decision, category, 0.98, reason, detectors_hit
 
-        # Step 2: Semantic Scope validator (LLM policy & intent classifier)
+        # Step 2: Semantic Scope validator (LLM policy & intent classifier) - MANDATORY
         scope_result = self.scope_validator.validate(normalized_text)
         if isinstance(scope_result, FailResult):
             meta = scope_result.metadata or {}
@@ -270,7 +337,7 @@ class GuardrailsSecurityFramework:
             detectors_hit.append(detector)
             return decision, category, confidence, reason, detectors_hit
 
-        # Step 3: Optional ML Jailbreak Validator (if available)
+        # Step 3: Optional ML Jailbreak Validator (ONLY if actually available)
         self.ml_adapter.ensure_initialized()
         if self.ml_adapter.available:
             is_jb, conf, reason = self.ml_adapter.validate(normalized_text)

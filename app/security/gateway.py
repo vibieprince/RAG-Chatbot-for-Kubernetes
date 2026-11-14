@@ -13,7 +13,7 @@ via app.security.trust_boundary.sanitize_and_isolate_context.
 from __future__ import annotations
 
 import time
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import logfire
 
 from app.security.models import SecurityDecision, Decision, SecurityCategory
@@ -55,6 +55,10 @@ class SecurityGateway:
 
     def __init__(self):
         self.framework = guardrails_framework
+
+    def get_security_status(self) -> Dict[str, Any]:
+        """Returns accurate readiness and health of security framework validators."""
+        return self.framework.get_security_status()
 
     def evaluate_query(self, raw_query: str) -> SecurityDecision:
         """

@@ -2,28 +2,34 @@
 LiteLLM Gateway Readiness & Parallel Wake-Up Manager.
 
 Architecture:
-  1. Parallel Cold-Start Wakeup:
-     Immediately on request arrival, triggers a non-blocking asynchronous health
-     probe to LiteLLM so cold-start waking overlaps with input validation,
-     security checks, and initial SSE framing.
-  2. Concurrency-Safe Deduplication (Single-Flight Pattern):
-     If multiple concurrent requests arrive while LiteLLM is waking up, only a single
-     probe loop is initiated. All concurrent callers attach to and await the same
-     in-flight task without hammering the waking service.
-  3. Bounded Exponential Backoff:
-     Polls the LiteLLM health/readiness endpoint with configurable exponential backoff
-     and a hard upper timeout boundary.
-  4. Instantaneous Fallback:
-     If the gateway is unreachable or probe times out, downstream components
-     immediately route requests to direct Groq inference without dropping or delaying traffic.
-  5. Readiness Caching:
-     Maintains a TTL-bounded readiness state to skip network roundtrips when the gateway
-     is actively warm.
+  1. Two-Stage Probing with Clear Ownership:
+     - Wake-up trigger: GET /health/liveliness (spins up Render instance)
+     - Readiness verification: GET /health/readiness (checks model route health)
+       with automatic fallback to /health if /health/readiness returns 404.
+  2. Redundant Wake-Up Elimination:
+     - When Streamlit initiates parallel wake-up, it sets X-LiteLLM-Wakeup-Triggered: true.
+     - FastAPI detects this header and skips sending a duplicate /health/liveliness trigger,
+       proceeding directly to polling /health/readiness.
+     - Direct calls to FastAPI without Streamlit continue to trigger /health/liveliness
+       authoritatively before checking readiness.
+  3. GET method enforcement: Uses GET, not HEAD, ensuring full end-to-end response validation.
+  4. Configurable Deadline (default ~120s):
+     Accommodates Render free-tier cold starts (~88s observed) without premature aborts.
+  5. Bounded Exponential Backoff with Jitter:
+     Individual request timeouts and backoff delays dynamically clamp to the remaining deadline.
+  6. Single-Flight Concurrency Deduplication:
+     Concurrent requests share the same in-flight probe task to avoid thundering herd.
+  7. Observable Logging:
+     Logs elapsed time, attempt number, endpoint, status code, and final outcome with Logfire.
+  8. Controlled Degradation:
+     Returns False when gateway is not ready within deadline, allowing downstream callers
+     to route to verified direct Groq fallback or emit controlled 503/504 errors.
 """
 
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 from typing import Optional, Dict, Any
 
@@ -37,9 +43,13 @@ def derive_health_url(base_url: str, override_url: Optional[str] = None) -> str:
     """
     Derives the LiteLLM health readiness URL.
     E.g. 'http://127.0.0.1:4000/v1' -> 'http://127.0.0.1:4000/health/readiness'.
+    Normalizes legacy base '/health' to canonical '/health/readiness'.
     """
     if override_url:
-        return override_url.strip()
+        override = override_url.strip()
+        if override.rstrip("/").endswith("/health"):
+            return f"{override.rstrip('/')}/readiness"
+        return override
 
     clean_base = base_url.rstrip("/")
     if clean_base.endswith("/v1"):
@@ -47,14 +57,29 @@ def derive_health_url(base_url: str, override_url: Optional[str] = None) -> str:
     return f"{clean_base}/health/readiness"
 
 
+def derive_liveliness_url(base_url: str, override_url: Optional[str] = None) -> str:
+    """
+    Derives the LiteLLM health liveliness URL.
+    E.g. 'http://127.0.0.1:4000/v1' -> 'http://127.0.0.1:4000/health/liveliness'.
+    """
+    if override_url and "/health/liveliness" in override_url:
+        return override_url.strip()
+
+    clean_base = base_url.rstrip("/")
+    if clean_base.endswith("/v1"):
+        clean_base = clean_base[:-3]
+    return f"{clean_base}/health/liveliness"
+
+
 class GatewayReadinessManager:
     """
-    Manages LiteLLM gateway readiness probing, wake-up lifecycle,
+    Manages LiteLLM gateway readiness probing, cold-start wake-up lifecycle,
     and single-flight concurrency synchronization.
     """
 
     def __init__(self) -> None:
         self._health_url = derive_health_url(settings.LITELLM_BASE_URL, settings.LITELLM_HEALTH_URL)
+        self._liveliness_url = derive_liveliness_url(settings.LITELLM_BASE_URL)
         self._is_ready: bool = False
         self._last_ready_monotonic: float = 0.0
         self._lock: Optional[asyncio.Lock] = None
@@ -86,10 +111,16 @@ class GatewayReadinessManager:
         elapsed = time.monotonic() - self._last_ready_monotonic
         return elapsed < settings.LITELLM_READINESS_CACHE_TTL
 
-    def start_wakeup(self) -> asyncio.Future[bool]:
+    def start_wakeup(
+        self,
+        request_id: Optional[str] = None,
+        skip_liveliness_trigger: bool = False,
+    ) -> asyncio.Future[bool]:
         """
         Initiates a non-blocking background wake-up probe.
         Guarantees single-flight deduplication: concurrent calls share the same task.
+        If skip_liveliness_trigger is True, skips redundant /health/liveliness ping
+        (already triggered by frontend).
         """
         loop = asyncio.get_running_loop()
 
@@ -105,31 +136,46 @@ class GatewayReadinessManager:
 
         # Launch single probe task
         self._current_probe_task = loop.create_task(
-            self._execute_probe_lifecycle(),
+            self._execute_probe_lifecycle(
+                request_id=request_id,
+                skip_liveliness_trigger=skip_liveliness_trigger,
+            ),
             name="litellm-gateway-wakeup-probe"
         )
         return self._current_probe_task
 
-    async def wait_ready(self, timeout: Optional[float] = None) -> bool:
+    async def wait_ready(
+        self,
+        timeout: Optional[float] = None,
+        request_id: Optional[str] = None,
+        skip_liveliness_trigger: bool = False,
+    ) -> bool:
         """
-        Awaits the gateway readiness probe up to the specified timeout.
+        Awaits the gateway readiness probe up to the specified timeout deadline.
         Returns True if LiteLLM is awake and ready, False if timed out or failed.
         """
-        task = self.start_wakeup()
+        task = self.start_wakeup(request_id=request_id, skip_liveliness_trigger=skip_liveliness_trigger)
         max_wait = timeout if timeout is not None else settings.LITELLM_WAKEUP_TIMEOUT
         try:
             return await asyncio.wait_for(asyncio.shield(task), timeout=max_wait)
         except (asyncio.TimeoutError, Exception) as exc:
             logfire.warning(
-                "Gateway readiness wait boundary reached: {exc}. Proceeding with fallback.",
-                exc=str(exc)
+                "Gateway readiness wait boundary reached: {exc}. Proceeding with controlled fallback.",
+                exc=str(exc),
+                request_id=request_id or "unknown",
             )
             return False
 
-    async def _execute_probe_lifecycle(self) -> bool:
+    async def _execute_probe_lifecycle(
+        self,
+        request_id: Optional[str] = None,
+        skip_liveliness_trigger: bool = False,
+    ) -> bool:
         """
-        Internal probe loop with bounded exponential backoff.
-        Protected by an async lock to prevent duplicate concurrent runs.
+        Internal probe loop:
+          Step 1: Trigger wake-up via GET /health/liveliness (if not already triggered by caller).
+          Step 2: Verify readiness via GET /health/readiness (or /health fallback).
+          Applies bounded exponential backoff with jitter up to the configured overall deadline.
         """
         async with self._get_lock():
             # Re-check cache under lock
@@ -144,33 +190,76 @@ class GatewayReadinessManager:
             headers: Dict[str, str] = {}
             if settings.LITELLM_MASTER_KEY:
                 headers["Authorization"] = f"Bearer {settings.LITELLM_MASTER_KEY}"
+            if request_id:
+                headers["X-Request-ID"] = request_id
 
             retries = 0
             logfire.info(
-                "Initiating LiteLLM gateway parallel wake-up probe | Target: {url} | Max timeout: {max_timeout}s",
-                url=self._health_url,
+                "Initiating LiteLLM gateway wake-up & readiness orchestration | Wake: {wake_url} | Ready: {ready_url} | Deadline: {max_timeout}s | SkipWakePing: {skip}",
+                wake_url=self._liveliness_url,
+                ready_url=self._health_url,
                 max_timeout=max_timeout,
+                skip=skip_liveliness_trigger,
+                request_id=request_id or "unknown",
             )
 
+            # --- Step 1: Initial Wake-up Trigger via /health/liveliness (unless already pinged) ---
+            if not skip_liveliness_trigger:
+                try:
+                    retries += 1
+                    probe_timeout = min(5.0, max(0.5, max_timeout - (time.monotonic() - start_time)))
+                    wake_resp = await client.get(
+                        self._liveliness_url,
+                        headers=headers,
+                        timeout=probe_timeout,
+                    )
+                    logfire.info(
+                        "LiteLLM wake-up trigger ({url}) returned status {status} (attempt {retries})",
+                        url=self._liveliness_url,
+                        status=wake_resp.status_code,
+                        retries=retries,
+                        elapsed=round(time.monotonic() - start_time, 2),
+                    )
+                except Exception as wake_err:
+                    logfire.info(
+                        "LiteLLM wake-up trigger ({url}) pinged: {err} (attempt {retries})",
+                        url=self._liveliness_url,
+                        err=type(wake_err).__name__,
+                        retries=retries,
+                        elapsed=round(time.monotonic() - start_time, 2),
+                    )
+            else:
+                logfire.info(
+                    "LiteLLM wake-up ping already triggered by client; proceeding directly to readiness verification.",
+                    request_id=request_id or "unknown",
+                )
+
+            # --- Step 2: Poll Readiness via /health/readiness with Jittered Backoff ---
             while (time.monotonic() - start_time) < max_timeout and retries < settings.LITELLM_MAX_RETRIES:
                 retries += 1
                 elapsed = time.monotonic() - start_time
-                remaining = max(0.5, max_timeout - elapsed)
-                probe_timeout = min(4.0, remaining)
+                remaining = max(0.1, max_timeout - elapsed)
+                if remaining <= 0.1:
+                    break
 
-                with logfire.span("LiteLLM Probe Attempt #{retries}", retries=retries):
+                probe_timeout = min(5.0, remaining)
+                target_url = self._health_url
+
+                with logfire.span("LiteLLM Readiness Probe Attempt #{retries}", retries=retries):
                     try:
                         resp = await client.get(
-                            self._health_url,
+                            target_url,
                             headers=headers,
-                            timeout=probe_timeout
+                            timeout=probe_timeout,
                         )
+
                         if resp.status_code == 200:
                             total_wake = time.monotonic() - start_time
                             self._is_ready = True
                             self._last_ready_monotonic = time.monotonic()
                             logfire.info(
-                                "LiteLLM gateway confirmed READY | Attempts: {retries} | Total wake-up time: {total_wake:.2f}s",
+                                "LiteLLM gateway confirmed READY | Endpoint: {url} | Attempts: {retries} | Total elapsed: {total_wake:.2f}s | Outcome: SUCCESS",
+                                url=target_url,
                                 retries=retries,
                                 total_wake=total_wake,
                             )
@@ -186,16 +275,17 @@ class GatewayReadinessManager:
                                 self._is_ready = True
                                 self._last_ready_monotonic = time.monotonic()
                                 logfire.info(
-                                    "LiteLLM gateway confirmed READY via /health | Attempts: {retries} | Total wake-up time: {total_wake:.2f}s",
+                                    "LiteLLM gateway confirmed READY via /health | Attempts: {retries} | Total elapsed: {total_wake:.2f}s | Outcome: SUCCESS",
                                     retries=retries,
                                     total_wake=total_wake,
                                 )
                                 return True
 
                         logfire.info(
-                            "LiteLLM responded with status {status} (attempt {retries})",
+                            "LiteLLM readiness probe returned status {status} (attempt {retries})",
                             status=resp.status_code,
                             retries=retries,
+                            elapsed=round(time.monotonic() - start_time, 2),
                         )
 
                     except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as net_err:
@@ -203,29 +293,34 @@ class GatewayReadinessManager:
                             "LiteLLM gateway cold-starting (attempt {retries}): {err}",
                             retries=retries,
                             err=type(net_err).__name__,
+                            elapsed=round(time.monotonic() - start_time, 2),
                         )
                     except Exception as unexpected:
                         logfire.warning(
                             "Unexpected error during gateway probe (attempt {retries}): {err}",
                             retries=retries,
                             err=str(unexpected),
+                            elapsed=round(time.monotonic() - start_time, 2),
                         )
 
-                # Sleep bounded exponential backoff
+                # Check remaining time before sleeping
                 time_left = max_timeout - (time.monotonic() - start_time)
                 if time_left <= 0:
                     break
 
-                sleep_time = min(backoff, time_left)
+                # Exponential backoff with sensible jitter
+                jitter = random.uniform(0.0, 0.4)
+                sleep_time = min(backoff + jitter, time_left)
                 await asyncio.sleep(sleep_time)
-                backoff = min(backoff * settings.LITELLM_BACKOFF_FACTOR, 4.0)
+                backoff = min(backoff * settings.LITELLM_BACKOFF_FACTOR, settings.LITELLM_MAX_BACKOFF)
 
             total_elapsed = time.monotonic() - start_time
             self._is_ready = False
             logfire.warning(
-                "LiteLLM gateway wake-up failed or timed out after {total_elapsed:.2f}s ({retries} attempts). Downstream queries will use direct Groq fallback.",
+                "LiteLLM gateway readiness deadline reached after {total_elapsed:.2f}s ({retries} attempts) | Outcome: TIMEOUT / UNREADY",
                 total_elapsed=total_elapsed,
                 retries=retries,
+                endpoint=self._health_url,
             )
             return False
 
@@ -243,6 +338,8 @@ class GatewayReadinessManager:
             "seconds_since_last_ready": round(elapsed, 1) if elapsed is not None else None,
             "in_flight_probe": bool(self._current_probe_task and not self._current_probe_task.done()),
             "health_url": self._health_url,
+            "liveliness_url": self._liveliness_url,
+            "timeout_deadline_seconds": settings.LITELLM_WAKEUP_TIMEOUT,
         }
 
     async def close(self) -> None:

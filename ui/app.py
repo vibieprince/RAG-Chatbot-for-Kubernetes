@@ -1,7 +1,8 @@
-
 import os
 import json
 import uuid
+import threading
+from typing import Optional, Generator, Dict, Any
 
 import logfire
 import requests
@@ -23,9 +24,15 @@ BACKEND_URL = os.getenv(
     "http://127.0.0.1:8000"
 ).rstrip("/")
 
+# Public LiteLLM URL for waking up Render service (no master key exposed)
+_raw_litellm_url = os.getenv("LITELLM_URL") or os.getenv("LITELLM_BASE_URL", "https://kubernetes-rag-litellm.onrender.com").rstrip("/")
+if _raw_litellm_url.endswith("/v1"):
+    _raw_litellm_url = _raw_litellm_url[:-3]
+LITELLM_LIVELINESS_URL = f"{_raw_litellm_url}/health/liveliness"
+
 # Connection timeout / streaming read timeout (seconds).
-# The read timeout is None so the SSE stream can stay open as long as needed.
-CONNECT_TIMEOUT = int(os.getenv("BACKEND_CONNECT_TIMEOUT", "10"))
+# 90s connect timeout ensures Render free-tier cold starts do not abort prematurely.
+CONNECT_TIMEOUT = int(os.getenv("BACKEND_CONNECT_TIMEOUT", "90"))
 STREAM_TIMEOUT = (CONNECT_TIMEOUT, None)
 
 AI_AVATAR = "🤖"
@@ -59,6 +66,37 @@ st.set_page_config(
     page_icon="🤖",
     layout="wide",
 )
+
+
+# --------------------------------------------------
+# PARALLEL SERVICE WAKE-UP
+# --------------------------------------------------
+
+def trigger_litellm_wakeup_background(request_id: str) -> None:
+    """
+    Initiates a non-blocking background GET request to LiteLLM's public
+    /health/liveliness endpoint. Does NOT expose or send LiteLLM master key.
+    Runs in a detached daemon thread so it never blocks Streamlit UI or query submission.
+    """
+    def _worker():
+        try:
+            requests.get(
+                LITELLM_LIVELINESS_URL,
+                timeout=5.0,
+                headers={
+                    "User-Agent": "Streamlit-ParallelWakeupClient/2.0",
+                    "X-Request-ID": request_id,
+                },
+            )
+        except Exception:
+            # Cold-start ping: connection drops or timeouts are expected while waking
+            pass
+
+    threading.Thread(
+        target=_worker,
+        name=f"litellm-wakeup-{request_id}",
+        daemon=True,
+    ).start()
 
 
 # --------------------------------------------------
@@ -97,9 +135,7 @@ def get_backend_error(response):
 def _parse_sse_line(line: str):
     """
     Parse a single SSE line.
-
-    Returns (event_type, data_dict) or (None, None) if the line
-    is not a complete data frame.
+    Returns (event_type, data_dict) or (None, None).
     """
     line = line.strip()
     if line.startswith("data:"):
@@ -109,15 +145,19 @@ def _parse_sse_line(line: str):
     return None, None
 
 
-def stream_query(prompt: str, thread_id: str):
+def stream_query(prompt: str, thread_id: str, request_id: Optional[str] = None):
     """
     POST to /query/stream and consume the SSE response incrementally.
-
+    Passes X-Request-ID and X-LiteLLM-Wakeup-Triggered headers.
     Yields structured event dicts: {"type": str, "data": dict}
-    Raises RuntimeError on connection/HTTP failure.
     """
     url = f"{BACKEND_URL}/query/stream"
     payload = {"q": prompt, "thread_id": thread_id}
+    headers = {
+        "Accept": "text/event-stream",
+        "X-Request-ID": request_id or f"req-{uuid.uuid4().hex[:12]}",
+        "X-LiteLLM-Wakeup-Triggered": "true",
+    }
 
     try:
         response = requests.post(
@@ -125,15 +165,15 @@ def stream_query(prompt: str, thread_id: str):
             json=payload,
             stream=True,
             timeout=STREAM_TIMEOUT,
-            headers={"Accept": "text/event-stream"},
+            headers=headers,
         )
     except requests.exceptions.Timeout:
         raise RuntimeError(
-            "The backend took too long to connect. Please ensure FastAPI is running."
+            "The backend took too long to connect. If Render is waking up from sleep, please try again in a moment."
         )
     except requests.exceptions.ConnectionError:
         raise RuntimeError(
-            "Cannot connect to the backend. Please ensure FastAPI is running."
+            "Cannot connect to the backend. Please ensure the FastAPI service is active."
         )
     except requests.exceptions.RequestException as exc:
         raise RuntimeError(f"Unable to communicate with the backend: {exc}")
@@ -151,7 +191,6 @@ def stream_query(prompt: str, thread_id: str):
 
         # SSE frames are separated by blank lines
         if raw_line == "":
-            # Dispatch accumulated event
             if pending_data:
                 raw_data = " ".join(pending_data)
                 try:
@@ -159,7 +198,6 @@ def stream_query(prompt: str, thread_id: str):
                 except json.JSONDecodeError:
                     parsed = {"raw": raw_data}
                 yield {"type": current_event_type, "data": parsed}
-            # Reset
             current_event_type = "message"
             pending_data = []
             continue
@@ -169,21 +207,25 @@ def stream_query(prompt: str, thread_id: str):
             current_event_type = value
         elif key == "data":
             pending_data.append(value)
-        # Ignore comment lines (starting with ':') and other fields
 
 
-def query_backend_sync(prompt: str, thread_id: str) -> dict:
+def query_backend_sync(prompt: str, thread_id: str, request_id: Optional[str] = None) -> dict:
     """
     Fallback: non-streaming request to /query.
     Used only when streaming is unavailable.
     """
     url = f"{BACKEND_URL}/query"
     payload = {"q": prompt, "thread_id": thread_id}
+    headers = {
+        "X-Request-ID": request_id or f"req-{uuid.uuid4().hex[:12]}",
+        "X-LiteLLM-Wakeup-Triggered": "true",
+    }
 
     try:
         response = requests.post(
             url,
             json=payload,
+            headers=headers,
             timeout=(CONNECT_TIMEOUT, 180),
         )
     except requests.exceptions.Timeout:
@@ -231,6 +273,10 @@ if "session_id" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Deduplication tracker: prevents duplicate wake-ups and query submissions
+if "processed_actions" not in st.session_state:
+    st.session_state.processed_actions = set()
+
 
 # --------------------------------------------------
 # SIDEBAR
@@ -252,9 +298,11 @@ with st.sidebar:
         logfire.info("User cleared conversation history.")
         st.session_state.messages = []
         st.session_state.session_id = str(uuid.uuid4())
+        st.session_state.processed_actions = set()
         st.rerun()
 
     st.caption(f"Backend: {BACKEND_URL}")
+    st.caption(f"LiteLLM: {LITELLM_LIVELINESS_URL}")
 
 
 # --------------------------------------------------
@@ -263,7 +311,7 @@ with st.sidebar:
 
 st.title("🤖 Enterprise Agentic Assistant")
 st.caption(
-    "Ask questions about Kubernetes, container orchestration, and cluster administration.\n The backend is hosted on Render's free tier so first request may take time to wake up server..."
+    "Ask questions about Kubernetes, container orchestration, and cluster administration.\n Services are hosted on Render free tier; parallel wake-up automatically warms LiteLLM and FastAPI simultaneously."
 )
 
 
@@ -284,10 +332,26 @@ for message in st.session_state.messages:
 if prompt := st.chat_input("Ask about Kubernetes..."):
 
     session_id = st.session_state.session_id
+    action_token = f"{session_id}:{len(st.session_state.messages)}:{prompt.strip()}"
+
+    # Deduplication check: prevent duplicate submission for the same user interaction
+    if action_token in st.session_state.processed_actions:
+        st.stop()
+
+    st.session_state.processed_actions.add(action_token)
+
+    # Correlation ID for this interaction
+    request_id = f"req-{uuid.uuid4().hex[:12]}"
+
+    # Phase 2: Parallel Wake-up — Trigger background GET to LiteLLM /health/liveliness
+    # Runs in a separate daemon thread; does NOT block UI or delay query submission
+    trigger_litellm_wakeup_background(request_id)
 
     logfire.info(
-        "User chat interaction started: {session_id}",
+        "User chat interaction started: {session_id} | RequestID: {request_id}",
         session_id=session_id,
+        request_id=request_id,
+        prompt_snippet=prompt[:60],
     )
 
     # Display and save user message
@@ -311,11 +375,11 @@ if prompt := st.chat_input("Ask about Kubernetes..."):
         sources_placeholder = st.empty()
 
         try:
-            with logfire.span("SSE Streaming RAG Backend"):
+            with logfire.span("SSE Streaming RAG Backend", request_id=request_id):
 
                 collecting_tokens = False
 
-                for event in stream_query(prompt=prompt, thread_id=session_id):
+                for event in stream_query(prompt=prompt, thread_id=session_id, request_id=request_id):
                     etype = event["type"]
                     edata = event["data"]
 
@@ -376,14 +440,14 @@ if prompt := st.chat_input("Ask about Kubernetes..."):
         except RuntimeError as exc:
             had_error = True
             error_msg = str(exc)
-            logfire.error("SSE stream failed: {error}", error=error_msg)
+            logfire.error("SSE stream failed: {error}", error=error_msg, request_id=request_id)
             status_placeholder.caption("⚠️ Request failed")
             answer_placeholder.error(error_msg)
             answer_parts = [f"**Error:** {error_msg}"]
 
         except Exception as exc:
             had_error = True
-            logfire.error("Unexpected UI error: {error}", error=str(exc))
+            logfire.error("Unexpected UI error: {error}", error=str(exc), request_id=request_id)
             status_placeholder.caption("⚠️ Unexpected error")
             answer_placeholder.error(
                 "An unexpected error occurred. Please try again."
@@ -414,6 +478,7 @@ if prompt := st.chat_input("Ask about Kubernetes..."):
         })
 
         logfire.info(
-            "Chat cycle completed: {session_id}",
+            "Chat cycle completed: {session_id} | RequestID: {request_id}",
             session_id=session_id,
+            request_id=request_id,
         )
